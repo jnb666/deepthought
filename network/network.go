@@ -57,7 +57,9 @@ func (n *Network) GetError(input, target, targetClass *m32.Matrix) (totalError, 
 
 // Train method trains the network on the given training set and updates the stats.
 // stop callback function returns true if we should terminate the run.
-func (n *Network) Train(t data.Dataset, learnRate float32, s Stats, stop func(int) bool) (epoch int) {
+func (n *Network) Train(t data.Dataset, learnRate float32, s *Stats, stop func(int) bool) int {
+	// reset stats
+	s.Clear()
 	for {
 		// update weights
 		// TODO: add hidden nodes
@@ -65,15 +67,14 @@ func (n *Network) Train(t data.Dataset, learnRate float32, s Stats, stop func(in
 		layer.BackProp(t.Train.Input, t.Train.Output, learnRate)
 
 		// update stats
-		s.Train.Update(n, epoch, t.Train)
-		s.Test.Update(n, epoch, t.Test)
-		s.Valid.Update(n, epoch, t.Valid)
+		s.Train.Update(n, t.Train)
+		s.Test.Update(n, t.Test)
+		s.Valid.Update(n, t.Valid)
 
 		// next epoch
-		if stop(epoch) {
-			break
+		if stop(s.Epoch) {
+			return s.Epoch
 		}
-		epoch++
+		s.Epoch++
 	}
-	return
 }

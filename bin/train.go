@@ -30,6 +30,7 @@ var (
 	learnRate = 0.5
 	trainRuns = 1
 	pause     = 0
+	seed      = int64(0)
 )
 
 // exit if fatal error
@@ -40,35 +41,24 @@ func checkErr(err error) {
 	}
 }
 
-// log stats to stdout every 50 epochs
-func logStats(ep int, stats network.Stats, done bool) {
-	if logEvery > 0 && ((ep+1)%logEvery == 0 || done) {
-		fmt.Printf("%3d:  train %s   valid %s   test %s\n", ep+1,
-			stats.Train.Print(ep), stats.Valid.Print(ep), stats.Test.Print(ep))
-	}
-}
-
-// return the function for the stopping condition
-func stopFunc(stats network.Stats) func(int) bool {
-	return func(epoch int) bool {
-		done := epoch+1 == maxEpoch || stats.Valid.Error.At(epoch, 0) < threshold
-		logStats(epoch, stats, done)
-		return done
-	}
-}
-
 // train the network
-func train(net *network.Network, data data.Dataset, stats network.Stats) {
-	runTime := &network.RunningStat{}
-	regError := &network.RunningStat{}
-	classError := &network.RunningStat{}
+func train(net *network.Network, data data.Dataset, stats *network.Stats) {
+	runTime := &mplot.RunningStat{}
+	regError := &mplot.RunningStat{}
+	classError := &mplot.RunningStat{}
 
 	// loop over training runs
 	for i := 0; i < trainRuns; i++ {
-		stats.Clear()
 		net.SetRandomWeights(maxWeight)
 		start := time.Now()
-		epoch := net.Train(data, float32(learnRate), stats, stopFunc(stats))
+		epoch := net.Train(data, float32(learnRate), stats,
+			func(epoch int) bool {
+				done := epoch >= maxEpoch || stats.Valid.Error.Last() < threshold
+				if logEvery > 0 && ((epoch+1)%logEvery == 0 || done) {
+					fmt.Println(stats)
+				}
+				return done
+			})
 		var status string
 		if epoch < maxEpoch-1 {
 			status = "**SUCCESS**"
@@ -77,8 +67,8 @@ func train(net *network.Network, data data.Dataset, stats network.Stats) {
 		}
 		// update stats
 		runTime.Push(time.Since(start).Seconds())
-		regError.Push(float64(stats.Test.Error.At(epoch, 0)))
-		classError.Push(float64(stats.Test.ClassError.At(epoch, 0)))
+		regError.Push(stats.Test.Error.Last())
+		classError.Push(stats.Test.ClassError.Last())
 		fmt.Printf("%s  epochs=%3d  run time=%.3f  reg error=%.3f  class error=%.3f\n",
 			status, epoch, runTime.Last, regError.Last, classError.Last)
 		time.Sleep(time.Millisecond * time.Duration(pause))
@@ -90,6 +80,7 @@ func train(net *network.Network, data data.Dataset, stats network.Stats) {
 func main() {
 	// get params
 	flag.BoolVar(&batch, "batch", batch, "set batch mode to disable plotting")
+	flag.Int64Var(&seed, "seed", seed, "random number seed - or 0 to use current time")
 	flag.IntVar(&maxEpoch, "epochs", maxEpoch, "maximum number of epochs")
 	flag.IntVar(&logEvery, "log", logEvery, "log stats every n epochs or only at end of run if 0")
 	flag.IntVar(&trainRuns, "runs", trainRuns, "no. of training runs")
@@ -100,8 +91,12 @@ func main() {
 		runtime.LockOSThread()
 	}
 
-	// rand random number generator
-	rand.Seed(time.Now().UTC().UnixNano())
+	// seed random number generator
+	if seed == 0 {
+		seed = time.Now().UTC().UnixNano()
+	}
+	fmt.Println("random seed =", seed)
+	rand.Seed(seed)
 
 	// load data sets
 	data, err := iris.Load(samples)

@@ -28,11 +28,6 @@ func New(rows, cols int) *Matrix {
 	return &Matrix{Rows: rows, Cols: cols, data: make([]float32, rows*cols), format: "%8.4g"}
 }
 
-// NewVector function creates a column vector with given size and capacity.
-func NewVector(rows, maxrows int) *Matrix {
-	return &Matrix{Rows: rows, Cols: 1, data: make([]float32, maxrows), format: "%8.4g"}
-}
-
 // Size method returns the allocated number of elements.
 func (m *Matrix) Size() int {
 	return len(m.data)
@@ -81,18 +76,6 @@ func (m *Matrix) Slice(start, end int) *Matrix {
 		data:   m.data[start*m.Cols : end*m.Cols],
 		format: m.format,
 	}
-}
-
-// Append method adds a new row to a column vector or panics if out of space
-func (m *Matrix) Append(val float32) {
-	if m.Cols != 1 {
-		panic("m32: append is only defined for a column vector")
-	}
-	if m.Rows >= m.Size() {
-		panic("m32: append failed - out of space")
-	}
-	m.data[m.Rows] = val
-	m.Rows++
 }
 
 // Load method initialises a matrix with data from a list of float32 values.
