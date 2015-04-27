@@ -8,6 +8,7 @@ import (
 
 // Stats struct has matrix with error on each set over time
 type Stats struct {
+	Run   int
 	Epoch int
 	Test  StatsData
 	Train StatsData
@@ -16,29 +17,40 @@ type Stats struct {
 
 // StatsData stores vectors with the errors and classification errors
 type StatsData struct {
-	Error      *mplot.Vector
-	ClassError *mplot.Vector
+	Error         *mplot.Vector
+	ClassError    *mplot.Vector
+	AvgError      *mplot.Vector
+	AvgClassError *mplot.Vector
 }
 
 // NewStats function initialises the stats matrices
-func NewStats(maxEpoch int) *Stats {
+func NewStats(nepoch int) *Stats {
 	return &Stats{
 		Epoch: 1,
-		Test:  StatsData{mplot.NewVector(maxEpoch), mplot.NewVector(maxEpoch)},
-		Train: StatsData{mplot.NewVector(maxEpoch), mplot.NewVector(maxEpoch)},
-		Valid: StatsData{mplot.NewVector(maxEpoch), mplot.NewVector(maxEpoch)},
+		Test:  newStatsData(nepoch),
+		Train: newStatsData(nepoch),
+		Valid: newStatsData(nepoch),
+	}
+}
+
+func newStatsData(nepoch int) StatsData {
+	return StatsData{
+		Error:         mplot.NewVector(nepoch),
+		ClassError:    mplot.NewVector(nepoch),
+		AvgError:      mplot.NewVector(nepoch),
+		AvgClassError: mplot.NewVector(nepoch),
 	}
 }
 
 // Clear method resets the stats vectors
 func (s *Stats) Clear() {
 	s.Epoch = 1
-	s.Test.Clear()
-	s.Train.Clear()
-	s.Valid.Clear()
+	s.Test.clear()
+	s.Train.clear()
+	s.Valid.clear()
 }
 
-func (d StatsData) Clear() {
+func (d StatsData) clear() {
 	d.Error.Clear()
 	d.ClassError.Clear()
 }
@@ -54,8 +66,16 @@ func (d StatsData) String() string {
 }
 
 // Update method calculates the error and updates the stats.
-func (s StatsData) Update(n *Network, d data.Data) {
+func (s *Stats) Update(n *Network, d data.Dataset) {
+	s.Train.update(n, s.Epoch-1, d.Train)
+	s.Test.update(n, s.Epoch-1, d.Test)
+	s.Valid.update(n, s.Epoch-1, d.Valid)
+}
+
+func (s StatsData) update(n *Network, ix int, d data.Data) {
 	totalError, classError := n.GetError(d.Input, d.Output, d.Classes)
-	s.Error.Push(totalError)
-	s.ClassError.Push(classError)
+	s.Error.Set(ix, totalError)
+	s.ClassError.Set(ix, classError)
+	s.AvgError.Set(ix, totalError)
+	s.AvgClassError.Set(ix, classError)
 }

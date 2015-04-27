@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	width     = 500
-	height    = 1000
+	width     = 800
+	height    = 800
 	threshold = 0.1
 	maxWeight = 0.5
 	samples   = 0
-	ymax      = 0.8
+	ymax1     = 0.4
+	ymax2     = 0.8
 )
 
 var (
@@ -48,7 +49,7 @@ func train(net *network.Network, data data.Dataset, stats *network.Stats) {
 	classError := &mplot.RunningStat{}
 
 	// loop over training runs
-	for i := 0; i < trainRuns; i++ {
+	for stats.Run = 0; stats.Run < trainRuns; stats.Run++ {
 		net.SetRandomWeights(maxWeight)
 		start := time.Now()
 		epoch := net.Train(data, float32(learnRate), stats,
@@ -122,22 +123,39 @@ func main() {
 		plt2 := mplot.New()
 		plt2.X.Label.Text = "epoch"
 		plt2.Y.Label.Text = "validation error"
+		plt3 := mplot.New()
+		plt3.Title.Text = "Mean value over runs"
+		plt3.X.Label.Text = "epoch"
+		plt3.Y.Label.Text = "average error"
+		plt4 := mplot.New()
+		plt4.X.Label.Text = "epoch"
+		plt4.Y.Label.Text = "validation error"
 
 		mplot.AddLines(plt1,
-			mplot.NewLine(stats.Train.Error, "training", 0, ymax),
-			mplot.NewLine(stats.Valid.Error, "validation", 0, ymax),
-			mplot.NewLine(stats.Test.Error, "test set", 0, ymax),
+			mplot.NewLine(stats.Train.Error, "training", 0, ymax1),
+			mplot.NewLine(stats.Valid.Error, "validation", 0, ymax1),
+			mplot.NewLine(stats.Test.Error, "test set", 0, ymax1),
 		)
 		mplot.AddLines(plt2,
-			mplot.NewLine(stats.Train.ClassError, "training", 0, ymax),
-			mplot.NewLine(stats.Valid.ClassError, "validation", 0, ymax),
-			mplot.NewLine(stats.Test.ClassError, "test set", 0, ymax),
+			mplot.NewLine(stats.Train.ClassError, "training", 0, ymax2),
+			mplot.NewLine(stats.Valid.ClassError, "validation", 0, ymax2),
+			mplot.NewLine(stats.Test.ClassError, "test set", 0, ymax2),
+		)
+		mplot.AddLines(plt3,
+			mplot.NewLine(stats.Train.AvgError, "training", 0, ymax1),
+			mplot.NewLine(stats.Valid.AvgError, "validation", 0, ymax1),
+			mplot.NewLine(stats.Test.AvgError, "test set", 0, ymax1),
+		)
+		mplot.AddLines(plt4,
+			mplot.NewLine(stats.Train.AvgClassError, "training", 0, ymax2),
+			mplot.NewLine(stats.Valid.AvgClassError, "validation", 0, ymax2),
+			mplot.NewLine(stats.Test.AvgClassError, "test set", 0, ymax2),
 		)
 
 		go train(net, data, stats)
 
 		for !window.ShouldClose() {
-			window.Draw(2, 1, plt1, plt2)
+			window.Draw(2, 2, plt1, plt3, plt2, plt4)
 		}
 	}
 }

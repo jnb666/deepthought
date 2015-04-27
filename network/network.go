@@ -67,9 +67,7 @@ func (n *Network) Train(t data.Dataset, learnRate float32, s *Stats, stop func(i
 		layer.BackProp(t.Train.Input, t.Train.Output, learnRate)
 
 		// update stats
-		s.Train.Update(n, t.Train)
-		s.Test.Update(n, t.Test)
-		s.Valid.Update(n, t.Valid)
+		s.Update(n, t)
 
 		// next epoch
 		if stop(s.Epoch) {
