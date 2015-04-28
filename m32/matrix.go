@@ -28,34 +28,20 @@ func New(rows, cols int) *Matrix {
 	return &Matrix{Rows: rows, Cols: cols, data: make([]float32, rows*cols), format: "%8.4g"}
 }
 
-// Size method returns the allocated number of elements.
-func (m *Matrix) Size() int {
-	return len(m.data)
-}
-
-// At method returns the data at given row, col
-func (m *Matrix) At(row, col int) float32 {
-	return m.data[row*m.Cols+col]
-}
-
-// Set method updates the data at given row, col
-func (m *Matrix) Set(row, col int, val float32) {
-	m.data[row*m.Cols+col] = val
-}
-
-// Copy method returns a new matrix with a copy of the data.
-func (m *Matrix) Copy() *Matrix {
-	return &Matrix{
-		Rows:   m.Rows,
-		Cols:   m.Cols,
-		data:   append([]float32{}, m.data...),
-		format: m.format,
+// Copy method copies data from matrix a into m
+func (m *Matrix) Copy(a *Matrix) *Matrix {
+	if len(m.data) < a.Rows*a.Cols {
+		panic("m32:Copy - output matrix is too small")
 	}
+	m.Rows, m.Cols = a.Rows, a.Cols
+	copy(m.data, a.data[:a.Rows*a.Cols])
+	return m
 }
 
 // Transpose method updates the data in place to transpose the matrix.
 func (m *Matrix) Transpose() *Matrix {
-	temp := append([]float32{}, m.data...)
+	temp := make([]float32, m.Rows*m.Cols)
+	copy(temp, m.data[:m.Rows*m.Cols])
 	m.Rows, m.Cols = m.Cols, m.Rows
 	for row := 0; row < m.Rows; row++ {
 		for col := 0; col < m.Cols; col++ {
@@ -82,7 +68,7 @@ func (m *Matrix) Slice(start, end int) *Matrix {
 // If the number of values is less than the size then they are repeated to fill the matrix.
 func (m *Matrix) Load(order Ordering, vals ...float32) *Matrix {
 	if len(vals) == 0 {
-		panic("m32:load no data provided")
+		panic("m32:Load - no data provided")
 	}
 	j := 0
 	next := func() (v float32) {
@@ -136,7 +122,7 @@ func (m *Matrix) String() string {
 		}
 		str[row] = begin
 		for col := 0; col < m.Cols; col++ {
-			str[row] += fmt.Sprintf(" "+m.format, m.At(row, col))
+			str[row] += fmt.Sprintf(" "+m.format, m.data[row*m.Cols+col])
 		}
 		str[row] += " " + end
 	}
@@ -145,7 +131,7 @@ func (m *Matrix) String() string {
 
 // Random method sets the matrix elements to uniform random numbers.
 func (m *Matrix) Random(min, max float32) *Matrix {
-	for i := range m.data {
+	for i := range m.data[:m.Rows*m.Cols] {
 		m.data[i] = min + (max-min)*rand.Float32()
 	}
 	return m
@@ -153,7 +139,7 @@ func (m *Matrix) Random(min, max float32) *Matrix {
 
 // Apply method updates each element of a matrix using the given function.
 func (m *Matrix) Apply(fn func(float32) float32) *Matrix {
-	for i := range m.data {
+	for i := range m.data[:m.Rows*m.Cols] {
 		m.data[i] = fn(m.data[i])
 	}
 	return m
@@ -161,7 +147,7 @@ func (m *Matrix) Apply(fn func(float32) float32) *Matrix {
 
 // Scale method muliplies each element of the matrix by a scalar.
 func (m *Matrix) Scale(s float32) *Matrix {
-	for i := range m.data {
+	for i := range m.data[:m.Rows*m.Cols] {
 		m.data[i] *= s
 	}
 	return m
@@ -172,30 +158,46 @@ func (m *Matrix) Add(s float32, a, b *Matrix) *Matrix {
 	if a.Cols != b.Cols || a.Rows != b.Rows {
 		panic("m32:Add - mismatch in no. of rows and columns in input matrices")
 	}
-	if m.Rows != a.Rows || m.Cols != a.Cols {
-		panic("m32:Add - mismatch in no. of rows and columns in output matrix")
+	if len(m.data) < a.Rows*a.Cols {
+		panic("m32:Add - output matrix is too small")
 	}
-	for i := range m.data {
+	m.Rows, m.Cols = a.Rows, a.Cols
+	for i := range m.data[:m.Rows*m.Cols] {
 		m.data[i] = s*a.data[i] + b.data[i]
 	}
 	return m
 }
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
-func (m *Matrix) Mul(a, b *Matrix) *Matrix {
-	if a.Cols != b.Rows {
+// If the aTrans flag is set then transpose matrix a.
+func (m *Matrix) Mul(a, b *Matrix, aTrans bool) *Matrix {
+	if (aTrans && a.Rows != b.Rows) || (!aTrans && a.Cols != b.Rows) {
 		panic("m32:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	if m.Rows != a.Rows || m.Cols != b.Cols {
-		panic("m32:Mul - mismatch in no. of rows and columns in output matrix")
+	if (aTrans && len(m.data) < a.Cols*b.Cols) || (!aTrans && len(m.data) < a.Rows*b.Cols) {
+		panic("m32:Mul - output matrix is too small")
 	}
-	for row := 0; row < a.Rows; row++ {
-		for col := 0; col < b.Cols; col++ {
-			sum := float32(0)
-			for k := 0; k < a.Cols; k++ {
-				sum += a.data[row*a.Cols+k] * b.data[k*b.Cols+col]
+	if aTrans {
+		m.Rows, m.Cols = a.Cols, b.Cols
+		for row := 0; row < m.Rows; row++ {
+			for col := 0; col < m.Cols; col++ {
+				sum := float32(0)
+				for k := 0; k < a.Rows; k++ {
+					sum += a.data[k*a.Cols+row] * b.data[k*b.Cols+col]
+				}
+				m.data[row*m.Cols+col] = sum
 			}
-			m.data[row*m.Cols+col] = sum
+		}
+	} else {
+		m.Rows, m.Cols = a.Rows, b.Cols
+		for row := 0; row < m.Rows; row++ {
+			for col := 0; col < m.Cols; col++ {
+				sum := float32(0)
+				for k := 0; k < a.Cols; k++ {
+					sum += a.data[row*a.Cols+k] * b.data[k*b.Cols+col]
+				}
+				m.data[row*m.Cols+col] = sum
+			}
 		}
 	}
 	return m
@@ -206,10 +208,11 @@ func (m *Matrix) MulElem(a, b *Matrix) *Matrix {
 	if a.Cols != b.Cols || a.Rows != b.Rows {
 		panic("m32:MulElem - mismatch in no. of rows and columns in input matrices")
 	}
-	if m.Rows != a.Rows || m.Cols != b.Cols {
-		panic("m32:MulElem - mismatch in no. of rows and columns in output matrix")
+	if len(m.data) < a.Rows*a.Cols {
+		panic("m32:MulElem - output matrix is too small")
 	}
-	for i := range m.data {
+	m.Rows, m.Cols = a.Rows, a.Cols
+	for i := range m.data[:m.Rows*m.Cols] {
 		m.data[i] = a.data[i] * b.data[i]
 	}
 	return m
@@ -217,10 +220,11 @@ func (m *Matrix) MulElem(a, b *Matrix) *Matrix {
 
 // MaxCol method gets the column number with the maximim value for each row of the input matrix.
 func (v *Matrix) MaxCol(m *Matrix) *Matrix {
-	if v.Rows != m.Rows || v.Cols != 1 {
-		panic("m32:MaxCol - invalid size for output vector")
+	if len(v.data) < m.Rows {
+		panic("m32:MaxCol - output matrix is too small")
 	}
-	for row := range v.data {
+	v.Rows, v.Cols = m.Rows, 1
+	for row := 0; row < m.Rows; row++ {
 		max, maxcol := float32(-1e38), 0
 		for col := 0; col < m.Cols; col++ {
 			if m.data[row*m.Cols+col] > max {
@@ -238,7 +242,7 @@ func SumDiff2(a, b *Matrix) float32 {
 		panic("m32:SumDiff2 - matrix size mismatch")
 	}
 	sum := float32(0)
-	for i := range a.data {
+	for i := range a.data[:a.Rows*a.Cols] {
 		diff := a.data[i] - b.data[i]
 		sum += diff * diff
 	}
@@ -251,7 +255,7 @@ func CountDiff(a, b *Matrix, epsilon float32) float32 {
 		panic("m32:CountDiff - matrix size mismatch")
 	}
 	count := 0
-	for i := range a.data {
+	for i := range a.data[:a.Rows*a.Cols] {
 		diff := a.data[i] - b.data[i]
 		if diff < -epsilon || diff > epsilon {
 			count++

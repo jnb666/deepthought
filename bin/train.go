@@ -105,7 +105,7 @@ func main() {
 
 	// set up network
 	net := network.NewNetwork()
-	net.Add(network.NewFCLayer(data.NumInputs, data.NumOutputs))
+	net.Add(network.NewFCLayer(data.NumInputs, data.NumOutputs, data.MaxSamples))
 	stats := network.NewStats(maxEpoch)
 
 	if batch {

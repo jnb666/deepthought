@@ -28,16 +28,24 @@ type Layer interface {
 
 // FCLayer type represents a fully connected layer.
 type FCLayer struct {
-	weights   *m32.Matrix
 	nin, nout int
+	weights   *m32.Matrix
+	gradient  *m32.Matrix
+	delta     *m32.Matrix
+	output    *m32.Matrix
+	net       *m32.Matrix
 }
 
 // NewFCLayer function creates a new fully connected layer.
-func NewFCLayer(inputs, outputs int) Layer {
+func NewFCLayer(ninput, noutput, maxSamples int) Layer {
 	return &FCLayer{
-		weights: m32.New(inputs+1, outputs),
-		nin:     inputs,
-		nout:    outputs,
+		nin:      ninput,
+		nout:     noutput,
+		weights:  m32.New(ninput+1, noutput),
+		gradient: m32.New(ninput+1, noutput),
+		delta:    m32.New(maxSamples, noutput),
+		output:   m32.New(maxSamples, noutput),
+		net:      m32.New(maxSamples, noutput),
 	}
 }
 
@@ -54,19 +62,19 @@ func (l *FCLayer) String() string {
 
 // FeedForward method evaluates the network layer and returns the output vector for a given input vector.
 func (l *FCLayer) FeedForward(input *m32.Matrix) *m32.Matrix {
-	return m32.New(input.Rows, l.nout).Mul(input, l.weights).Apply(Activation)
+	l.output.Mul(input, l.weights, false).Apply(Activation)
+	return l.output
 }
 
 // BackProp method performs one back propagation step to tune the weights.
 func (l *FCLayer) BackProp(input, target *m32.Matrix, learnRate float32) {
-	samples := input.Rows
 	// feed forward input
-	net := m32.New(samples, l.nout).Mul(input, l.weights)
-	output := net.Copy().Apply(Activation)
+	l.net.Mul(input, l.weights, false)
+	l.output.Copy(l.net).Apply(Activation)
 	// calculate sensitivity
-	errorVec := m32.New(samples, l.nout).Add(-1, output, target)
-	delta := errorVec.MulElem(errorVec, net.Apply(ActivationDeriv)).Transpose()
+	l.delta.Add(-1, l.output, target)
+	l.delta.MulElem(l.delta, l.net.Apply(ActivationDeriv))
 	// update weights
-	gradient := m32.New(l.nout, l.nin+1).Mul(delta, input).Scale(learnRate / float32(samples))
-	l.weights.Add(1, l.weights, gradient.Transpose())
+	l.gradient.Mul(l.delta, input, true).Scale(learnRate / float32(input.Rows)).Transpose()
+	l.weights.Add(1, l.weights, l.gradient)
 }

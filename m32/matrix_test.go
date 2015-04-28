@@ -37,10 +37,18 @@ func TestApply(t *testing.T) {
 
 func TestMul(t *testing.T) {
 	a := New(2, 3).Load(RowMajor, 1, 2, 3, 4, 5, 6)
+	t.Logf("a\n%s\n", a)
 	b := New(3, 2).Load(RowMajor, 7, 8, 9, 10, 11, 12)
-	m := New(2, 2).Mul(a, b)
-	t.Logf("\n%s\n", m)
+	t.Logf("b\n%s\n", b)
+	m := New(2, 2).Mul(a, b, false)
+	t.Logf("m\n%s\n", m)
 	expect := New(2, 2).Load(RowMajor, 58, 64, 139, 154)
+	if !reflect.DeepEqual(m, expect) {
+		t.Errorf("expected\n%s\n", expect)
+	}
+	a.Transpose()
+	m.Mul(a, b, true)
+	t.Logf("m [trans]\n%s\n", m)
 	if !reflect.DeepEqual(m, expect) {
 		t.Errorf("expected\n%s\n", expect)
 	}

@@ -10,7 +10,7 @@ func TestLayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := NewFCLayer(s.NumInputs, s.NumOutputs)
+	l := NewFCLayer(s.NumInputs, s.NumOutputs, 10)
 	l.Weights().Random(-0.5, 0.5)
 	t.Log(l)
 	t.Logf("input:\n%s\n", s.Test.Input)
@@ -19,17 +19,26 @@ func TestLayer(t *testing.T) {
 }
 
 func TestTrain(t *testing.T) {
-	s, err := iris.Load(1)
+	s, err := iris.Load(0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	net := NewNetwork()
-	net.Add(NewFCLayer(s.NumInputs, s.NumOutputs))
+	net.Add(NewFCLayer(s.NumInputs, s.NumOutputs, s.MaxSamples))
 	net.SetRandomWeights(0.5)
 	t.Log(net)
-	maxEpoch := 10
+	maxEpoch := 200
 	stats := NewStats(maxEpoch)
-	net.Train(s, 0.1, stats, func(ep int) bool { return ep < maxEpoch })
-	t.Logf("Error:\n%s\n", stats.Test.Error)
-	t.Logf("ClassError:\n%s\n", stats.Test.ClassError)
+	epochs := net.Train(s, 0.5, stats, func(ep int) bool {
+		done := ep >= maxEpoch || stats.Valid.Error.Last() < 0.1
+		if ep%25 == 0 || done {
+			t.Log(stats)
+		}
+		return done
+	})
+	t.Logf("completed after %d epochs\n", epochs)
+	if epochs == maxEpoch {
+		t.Error("training failed to hit threshold!")
+	}
+	t.Log(net)
 }

@@ -13,6 +13,7 @@ type Dataset struct {
 	Valid      Data
 	NumInputs  int
 	NumOutputs int
+	MaxSamples int
 }
 
 // Data type represents a set of test or training data.
