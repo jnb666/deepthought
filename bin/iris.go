@@ -19,7 +19,7 @@ func setup() (data.Dataset, *network.Network) {
 	d, err := data.Load("iris", 0)
 	checkErr(err)
 
-	net := network.NewNetwork()
+	net := network.NewNetwork(d.MaxSamples)
 	net.Add(network.NewFCLayer(d.NumInputs, d.NumOutputs, d.MaxSamples))
 	return d, net
 }

@@ -71,7 +71,6 @@ func (v *Vector) XY(i int) (x, y float64) {
 
 // DataRange implements the plot.DataRanger interface.
 func (v *Vector) DataRange() (xmin, xmax, ymin, ymax float64) {
-	fmt.Println("range", v.min, v.max)
 	return 0, float64(v.Cap() - 1), v.min, v.max
 }
 

@@ -11,12 +11,18 @@ import (
 
 // Neural network type is an array of layers.
 type Network struct {
-	Nodes []Layer
+	Nodes     []Layer
+	BatchSize int
+	classes   *m32.Matrix
 }
 
 // NewNetwork function initialises a new network
-func NewNetwork() *Network {
-	return &Network{Nodes: []Layer{}}
+func NewNetwork(batchSize int) *Network {
+	return &Network{
+		Nodes:     []Layer{},
+		BatchSize: batchSize,
+		classes:   m32.New(batchSize, 1),
+	}
 }
 
 // Add method appends a new layer to the network
@@ -53,8 +59,8 @@ func (n *Network) Run(input *m32.Matrix) *m32.Matrix {
 func (n *Network) GetError(input, target, targetClass *m32.Matrix) (totalError, classError float32) {
 	output := n.Run(input)
 	totalError = m32.SumDiff2(target, output) / float32(input.Rows*output.Cols)
-	classes := m32.New(output.Rows, 1).MaxCol(output)
-	classError = m32.CountDiff(classes, targetClass, epsilon) / float32(input.Rows)
+	n.classes.MaxCol(output)
+	classError = m32.CountDiff(n.classes, targetClass, epsilon) / float32(input.Rows)
 	return
 }
 
