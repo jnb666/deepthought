@@ -1,9 +1,12 @@
 package network
 
 import (
+	"fmt"
 	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/m32"
+	"math/rand"
 	"strings"
+	"time"
 )
 
 // Neural network type is an array of layers.
@@ -60,6 +63,7 @@ func (n *Network) GetError(input, target, targetClass *m32.Matrix) (totalError, 
 func (n *Network) Train(t data.Dataset, learnRate float32, s *Stats, stop func(int) bool) int {
 	// reset stats
 	s.Clear()
+	start := time.Now()
 	for {
 		// update weights
 		// TODO: add hidden nodes
@@ -71,8 +75,22 @@ func (n *Network) Train(t data.Dataset, learnRate float32, s *Stats, stop func(i
 
 		// next epoch
 		if stop(s.Epoch) {
-			return s.Epoch
+			break
 		}
 		s.Epoch++
 	}
+	// per run stats
+	s.RunTime.Push(time.Since(start).Seconds())
+	s.RegError.Push(s.Test.Error.Last())
+	s.ClsError.Push(s.Test.ClassError.Last())
+	return s.Epoch
+}
+
+// SeedRandom function sets the random seed, or seeds using time if input is zero
+func SeedRandom(seed int64) {
+	if seed == 0 {
+		seed = time.Now().UTC().UnixNano()
+	}
+	fmt.Println("random seed =", seed)
+	rand.Seed(seed)
 }

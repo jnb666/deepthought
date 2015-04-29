@@ -11,18 +11,15 @@ import (
 type Line struct {
 	*Vector
 	draw.LineStyle
-	Name     string
-	min, max float64
+	Name string
 }
 
 // NewLine function creates a new line with default line style. Input is a column vector and range of data.
-func NewLine(vec *Vector, name string, ymin, ymax float64) *Line {
+func NewLine(vec *Vector, name string) *Line {
 	return &Line{
 		Vector:    vec,
 		LineStyle: plotter.DefaultLineStyle,
 		Name:      name,
-		min:       ymin,
-		max:       ymax,
 	}
 }
 
@@ -38,11 +35,6 @@ func (l *Line) Plot(c draw.Canvas, plt *plot.Plot) {
 	c.StrokeLines(l.LineStyle, c.ClipLinesXY(ps)...)
 }
 
-// DataRange implements the plot.DataRanger interface.
-func (l *Line) DataRange() (xmin, xmax, ymin, ymax float64) {
-	return 0, float64(l.Cap() - 1), l.min, l.max
-}
-
 // Thumbnail implements the plot.Thumbnailer interface.
 func (l *Line) Thumbnail(c *draw.Canvas) {
 	y := c.Center().Y
@@ -55,7 +47,9 @@ func AddLines(plt *plot.Plot, lines ...*Line) {
 	for i, line := range lines {
 		line.Color = plotutil.Color(i)
 		ps[i] = line
-		plt.Legend.Add(line.Name, line)
+		if line.Name != "" {
+			plt.Legend.Add(line.Name, line)
+		}
 	}
 	plt.Add(ps...)
 }

@@ -8,11 +8,13 @@ import (
 
 // Stats struct has matrix with error on each set over time
 type Stats struct {
-	Run   int
-	Epoch int
-	Test  StatsData
-	Train StatsData
-	Valid StatsData
+	Epoch    int
+	Test     StatsData
+	Train    StatsData
+	Valid    StatsData
+	RunTime  mplot.StatsVector
+	RegError mplot.StatsVector
+	ClsError mplot.StatsVector
 }
 
 // StatsData stores vectors with the errors and classification errors
@@ -24,21 +26,24 @@ type StatsData struct {
 }
 
 // NewStats function initialises the stats matrices
-func NewStats(nepoch int) *Stats {
+func NewStats(nepoch, nruns int, maxError, maxClsErr float64) *Stats {
 	return &Stats{
-		Epoch: 1,
-		Test:  newStatsData(nepoch),
-		Train: newStatsData(nepoch),
-		Valid: newStatsData(nepoch),
+		Epoch:    1,
+		Test:     newStatsData(nepoch, maxError, maxClsErr),
+		Train:    newStatsData(nepoch, maxError, maxClsErr),
+		Valid:    newStatsData(nepoch, maxError, maxClsErr),
+		RunTime:  mplot.NewStatsVector(nruns, 0, 1),
+		RegError: mplot.NewStatsVector(nruns, 0, maxError),
+		ClsError: mplot.NewStatsVector(nruns, 0, maxClsErr),
 	}
 }
 
-func newStatsData(nepoch int) StatsData {
+func newStatsData(nepoch int, ymax1, ymax2 float64) StatsData {
 	return StatsData{
-		Error:         mplot.NewVector(nepoch),
-		ClassError:    mplot.NewVector(nepoch),
-		AvgError:      mplot.NewVector(nepoch),
-		AvgClassError: mplot.NewVector(nepoch),
+		Error:         mplot.NewVector(nepoch, 0, ymax1),
+		ClassError:    mplot.NewVector(nepoch, 0, ymax2),
+		AvgError:      mplot.NewVector(nepoch, 0, ymax1),
+		AvgClassError: mplot.NewVector(nepoch, 0, ymax2),
 	}
 }
 
@@ -74,8 +79,8 @@ func (s *Stats) Update(n *Network, d data.Dataset) {
 
 func (s StatsData) update(n *Network, ix int, d data.Data) {
 	totalError, classError := n.GetError(d.Input, d.Output, d.Classes)
-	s.Error.Set(ix, totalError)
-	s.ClassError.Set(ix, classError)
-	s.AvgError.Set(ix, totalError)
-	s.AvgClassError.Set(ix, classError)
+	s.Error.Set(ix, float64(totalError))
+	s.ClassError.Set(ix, float64(classError))
+	s.AvgError.Set(ix, float64(totalError))
+	s.AvgClassError.Set(ix, float64(classError))
 }

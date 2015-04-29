@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/jnb666/deepthought/m32"
 	"github.com/jnb666/deepthought/mplot"
 )
 
@@ -34,15 +33,14 @@ func main() {
 	window, err := mplot.NewWindow(width, height, "viewer")
 	checkErr(err)
 
-	p, err := mplot.New()
-	checkErr(err)
+	p := mplot.New()
 	p.Title.Text = "Plot example"
 	p.X.Label.Text = "X"
 	p.Y.Label.Text = "Y"
 
-	v1 := m32.NewVector(0, points)
-	v2 := m32.NewVector(0, points)
-	v3 := m32.NewVector(0, points)
+	v1 := mplot.NewVector(points)
+	v2 := mplot.NewVector(points)
+	v3 := mplot.NewVector(points)
 
 	mplot.AddLines(p,
 		mplot.NewLine(v1, "first", 0, maxy),
@@ -52,13 +50,13 @@ func main() {
 
 	go func() {
 		for i := 0; i < points; i++ {
-			v1.Append(randval(i))
-			v2.Append(randval(i))
-			v3.Append(randval(i))
+			v1.Set(i, randval(i))
+			v2.Set(i, randval(i))
+			v3.Set(i, randval(i))
 			time.Sleep(100 * time.Millisecond)
 		}
 	}()
 	for !window.ShouldClose() {
-		window.Update(p)
+		window.Draw(1, 1, p)
 	}
 }

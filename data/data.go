@@ -6,6 +6,14 @@ import (
 	"os"
 )
 
+// Register map of all loaders which are available
+var Register = map[string]Loader{}
+
+// Loader interface is used to load a new dataset
+type Loader interface {
+	Load(samples int) (Dataset, error)
+}
+
 // Dataset type represents a set of test, training and validation data
 type Dataset struct {
 	Test       Data
@@ -25,9 +33,19 @@ type Data struct {
 	NumSamples int
 }
 
-// Load function reads a dataset from a text file.
+// Load function loads and returns a new dataset.
+func Load(name string, samples int) (s Dataset, err error) {
+	if loader, ok := Register[name]; ok {
+		s, err = loader.Load(samples)
+	} else {
+		err = fmt.Errorf("Load: unknown dataset name %s\n", name)
+	}
+	return
+}
+
+// LoadFile function reads a dataset from a text file.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-func Load(filename string, samples int) (d Data, nin, nout int, err error) {
+func LoadFile(filename string, samples int) (d Data, nin, nout int, err error) {
 	var file *os.File
 	if file, err = os.Open(filename); err != nil {
 		return

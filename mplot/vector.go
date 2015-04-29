@@ -10,13 +10,17 @@ type Vector struct {
 	data    []float64
 	samples []int
 	size    int
+	min     float64
+	max     float64
 }
 
-// NewVector creates a new empty vector with the given capacity and y range
-func NewVector(capacity int) *Vector {
+// NewVector creates a new empty vector with the given capacity and range
+func NewVector(capacity int, min, max float64) *Vector {
 	return &Vector{
 		data:    make([]float64, capacity),
 		samples: make([]int, capacity),
+		min:     min,
+		max:     max,
 	}
 }
 
@@ -29,16 +33,22 @@ func (v *Vector) Clear() {
 }
 
 // Set method updates the running mean for the ith value
-func (v *Vector) Set(i int, val float32) {
+func (v *Vector) Set(i int, val float64) {
 	if v.samples[i] == 0 {
-		v.data[i] = float64(val)
+		v.data[i] = val
 	} else {
 		n := float64(v.samples[i])
-		v.data[i] = (float64(val) + n*v.data[i]) / (n + 1)
+		v.data[i] = (val + n*v.data[i]) / (n + 1)
 	}
 	v.samples[i]++
 	if i+1 > v.size {
 		v.size = i + 1
+	}
+	if v.data[i] < v.min {
+		v.min = v.data[i]
+	}
+	if v.data[i] > v.max {
+		v.max = v.data[i]
 	}
 }
 
@@ -59,19 +69,24 @@ func (v *Vector) XY(i int) (x, y float64) {
 	return float64(i), v.data[i]
 }
 
+// DataRange implements the plot.DataRanger interface.
+func (v *Vector) DataRange() (xmin, xmax, ymin, ymax float64) {
+	fmt.Println("range", v.min, v.max)
+	return 0, float64(v.Cap() - 1), v.min, v.max
+}
+
 func (v *Vector) String() string {
 	return fmt.Sprintf("cap=%d %v", len(v.data), v.data[:v.size])
 }
 
 // Running mean and stddev as per http://www.johndcook.com/blog/standard_deviation/
 type RunningStat struct {
-	Count, Max, Last  float64
+	Count, Max        float64
 	Mean, Var, StdDev float64
 	oldM, oldV        float64
 }
 
 func (s *RunningStat) Push(x float64) {
-	s.Last = x
 	if x > s.Max {
 		s.Max = x
 	}
@@ -90,4 +105,25 @@ func (s *RunningStat) Push(x float64) {
 
 func (s *RunningStat) String() string {
 	return fmt.Sprintf("mean = %.3f  std dev = %.3f  max = %.3f", s.Mean, s.StdDev, s.Max)
+}
+
+// StatsVector type combines a vector with associated running stats
+type StatsVector struct {
+	*Vector
+	*RunningStat
+}
+
+// NewStatsVector creates a new empty vector with the given capacity
+func NewStatsVector(capacity int, min, max float64) StatsVector {
+	return StatsVector{NewVector(capacity, min, max), &RunningStat{}}
+}
+
+// Push method adds a new element and updates the stats
+func (s StatsVector) Push(val float64) {
+	s.Set(s.Len(), val)
+	s.RunningStat.Push(val)
+}
+
+func (s StatsVector) String() string {
+	return s.RunningStat.String()
 }
