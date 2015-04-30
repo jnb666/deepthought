@@ -15,7 +15,7 @@ const (
 )
 
 // Matrix is a struct type representing a dense matrix of float32 numbers.
-// Data is stored internally in row major order.
+// Data is stored internally in column major order.
 type Matrix struct {
 	Rows   int
 	Cols   int
@@ -28,16 +28,6 @@ func New(rows, cols int) *Matrix {
 	return &Matrix{Rows: rows, Cols: cols, data: make([]float32, rows*cols), format: "%8.4g"}
 }
 
-// Copy method copies data from matrix a into m
-func (m *Matrix) Copy(a *Matrix) *Matrix {
-	if len(m.data) < a.Rows*a.Cols {
-		panic("m32:Copy - output matrix is too small")
-	}
-	m.Rows, m.Cols = a.Rows, a.Cols
-	copy(m.data, a.data[:a.Rows*a.Cols])
-	return m
-}
-
 // Transpose method updates the data in place to transpose the matrix.
 func (m *Matrix) Transpose() *Matrix {
 	temp := make([]float32, m.Rows*m.Cols)
@@ -45,23 +35,10 @@ func (m *Matrix) Transpose() *Matrix {
 	m.Rows, m.Cols = m.Cols, m.Rows
 	for row := 0; row < m.Rows; row++ {
 		for col := 0; col < m.Cols; col++ {
-			m.data[row*m.Cols+col] = temp[col*m.Rows+row]
+			m.data[row+col*m.Rows] = temp[col+row*m.Cols]
 		}
 	}
 	return m
-}
-
-// Slice method returns a view on the matrix containing rows from start to end exclusive.
-func (m *Matrix) Slice(start, end int) *Matrix {
-	if end < start || start < 0 || end > m.Rows {
-		panic("m32:Slice - row parameters out of range")
-	}
-	return &Matrix{
-		Rows:   end - start,
-		Cols:   m.Cols,
-		data:   m.data[start*m.Cols : end*m.Cols],
-		format: m.format,
-	}
 }
 
 // Load method initialises a matrix with data from a list of float32 values.
@@ -79,22 +56,41 @@ func (m *Matrix) Load(order Ordering, vals ...float32) *Matrix {
 		}
 		return
 	}
-	if order == RowMajor {
+	if order == ColMajor {
 		// data is provided in same ordering as we store it internally
-		for row := 0; row < m.Rows; row++ {
-			for col := 0; col < m.Cols; col++ {
-				m.data[row*m.Cols+col] = next()
+		for col := 0; col < m.Cols; col++ {
+			for row := 0; row < m.Rows; row++ {
+				m.data[col*m.Rows+row] = next()
 			}
 		}
 	} else {
 		// data is transposed
-		for col := 0; col < m.Cols; col++ {
-			for row := 0; row < m.Rows; row++ {
-				m.data[row*m.Cols+col] = next()
+		for row := 0; row < m.Rows; row++ {
+			for col := 0; col < m.Cols; col++ {
+				m.data[col*m.Rows+row] = next()
 			}
 		}
 	}
 	return m
+}
+
+// Join method joins columns from a and b and puts the result into m.
+func (m *Matrix) Join(a, b *Matrix) *Matrix {
+	if a.Rows != b.Rows {
+		panic("m32:Join - input matrices must have same number of rows")
+	}
+	if (a.Cols+b.Cols)*a.Rows < len(m.data) {
+		panic("m32:Join - output matrix is too small")
+	}
+	m.Rows, m.Cols = a.Rows, a.Cols+b.Cols
+	copy(m.data, a.data[:a.Rows*a.Cols])
+	copy(m.data[a.Rows*a.Cols:], b.data[:b.Rows*b.Cols])
+	return m
+}
+
+// Dara method returns the matrix data as a slice
+func (m *Matrix) Data() []float32 {
+	return m.data
 }
 
 // SetFormat method sets the printf format string used by the String method for each matrix element.
@@ -122,7 +118,7 @@ func (m *Matrix) String() string {
 		}
 		str[row] = begin
 		for col := 0; col < m.Cols; col++ {
-			str[row] += fmt.Sprintf(" "+m.format, m.data[row*m.Cols+col])
+			str[row] += fmt.Sprintf(" "+m.format, m.data[col*m.Rows+row])
 		}
 		str[row] += " " + end
 	}
@@ -183,24 +179,24 @@ func (m *Matrix) Mul(a, b *Matrix, aTrans bool) *Matrix {
 	}
 	if aTrans {
 		m.Rows, m.Cols = a.Cols, b.Cols
-		for row := 0; row < m.Rows; row++ {
-			for col := 0; col < m.Cols; col++ {
+		for col := 0; col < m.Cols; col++ {
+			for row := 0; row < m.Rows; row++ {
 				sum := float32(0)
 				for k := 0; k < a.Rows; k++ {
-					sum += a.data[k*a.Cols+row] * b.data[k*b.Cols+col]
+					sum += a.data[k+row*a.Rows] * b.data[k+col*b.Rows]
 				}
-				m.data[row*m.Cols+col] = sum
+				m.data[col*m.Rows+row] = sum
 			}
 		}
 	} else {
 		m.Rows, m.Cols = a.Rows, b.Cols
-		for row := 0; row < m.Rows; row++ {
-			for col := 0; col < m.Cols; col++ {
+		for col := 0; col < m.Cols; col++ {
+			for row := 0; row < m.Rows; row++ {
 				sum := float32(0)
 				for k := 0; k < a.Cols; k++ {
-					sum += a.data[row*a.Cols+k] * b.data[k*b.Cols+col]
+					sum += a.data[row+k*a.Rows] * b.data[k+col*b.Rows]
 				}
-				m.data[row*m.Cols+col] = sum
+				m.data[col*m.Rows+row] = sum
 			}
 		}
 	}
@@ -231,8 +227,8 @@ func (v *Matrix) MaxCol(m *Matrix) *Matrix {
 	for row := 0; row < m.Rows; row++ {
 		max, maxcol := float32(-1e38), 0
 		for col := 0; col < m.Cols; col++ {
-			if m.data[row*m.Cols+col] > max {
-				max, maxcol = m.data[row*m.Cols+col], col
+			if val := m.data[row+col*m.Rows]; val > max {
+				max, maxcol = val, col
 			}
 		}
 		v.data[row] = float32(maxcol)

@@ -25,6 +25,17 @@ func TestTranspose(t *testing.T) {
 	}
 }
 
+func TestJoin(t *testing.T) {
+	a := New(3, 2).Load(RowMajor, 1)
+	b := New(3, 2).Load(RowMajor, 2)
+	m := New(3, 4).Join(a, b)
+	t.Logf("\n%s\n", m)
+	expect := New(3, 4).Load(RowMajor, 1, 1, 2, 2)
+	if !reflect.DeepEqual(m, expect) {
+		t.Errorf("expected\n%s\n", expect)
+	}
+}
+
 func TestApply(t *testing.T) {
 	m := New(2, 3).Load(RowMajor, 1.1, 2.2, 3.3)
 	m.Apply(m, func(x float32) float32 { return 2 * x })
