@@ -6,6 +6,11 @@ import (
 	"github.com/jnb666/deepthought/mplot"
 )
 
+const (
+	ymin = 0.0
+	ymax = 0.1
+)
+
 // Stats struct has matrix with error on each set over time
 type Stats struct {
 	Epoch    int
@@ -26,24 +31,24 @@ type StatsData struct {
 }
 
 // NewStats function initialises the stats matrices
-func NewStats(nepoch, nruns int, maxError, maxClsErr float64) *Stats {
+func NewStats(nepoch, nruns int) *Stats {
 	return &Stats{
 		Epoch:    1,
-		Test:     newStatsData(nepoch, maxError, maxClsErr),
-		Train:    newStatsData(nepoch, maxError, maxClsErr),
-		Valid:    newStatsData(nepoch, maxError, maxClsErr),
-		RunTime:  mplot.NewStatsVector(nruns, 0, 1),
-		RegError: mplot.NewStatsVector(nruns, 0, maxError),
-		ClsError: mplot.NewStatsVector(nruns, 0, maxClsErr),
+		Test:     newStatsData(nepoch),
+		Train:    newStatsData(nepoch),
+		Valid:    newStatsData(nepoch),
+		RunTime:  mplot.NewStatsVector(nruns, ymin, ymax),
+		RegError: mplot.NewStatsVector(nruns, ymin, ymax),
+		ClsError: mplot.NewStatsVector(nruns, ymin, ymax),
 	}
 }
 
-func newStatsData(nepoch int, ymax1, ymax2 float64) StatsData {
+func newStatsData(nepoch int) StatsData {
 	return StatsData{
-		Error:         mplot.NewVector(nepoch, 0, ymax1),
-		ClassError:    mplot.NewVector(nepoch, 0, ymax2),
-		AvgError:      mplot.NewVector(nepoch, 0, ymax1),
-		AvgClassError: mplot.NewVector(nepoch, 0, ymax2),
+		Error:         mplot.NewVector(nepoch, ymin, ymax),
+		ClassError:    mplot.NewVector(nepoch, ymin, ymax),
+		AvgError:      mplot.NewVector(nepoch, ymin, ymax),
+		AvgClassError: mplot.NewVector(nepoch, ymin, ymax),
 	}
 }
 
@@ -72,12 +77,18 @@ func (d StatsData) String() string {
 
 // Update method calculates the error and updates the stats.
 func (s *Stats) Update(n *Network, d data.Dataset) {
-	s.Train.update(n, s.Epoch-1, d.Train)
-	s.Test.update(n, s.Epoch-1, d.Test)
-	s.Valid.update(n, s.Epoch-1, d.Valid)
+	if d.Train != nil {
+		s.Train.update(n, s.Epoch-1, d.Train)
+	}
+	if d.Test != nil {
+		s.Test.update(n, s.Epoch-1, d.Test)
+	}
+	if d.Valid != nil {
+		s.Valid.update(n, s.Epoch-1, d.Valid)
+	}
 }
 
-func (s StatsData) update(n *Network, ix int, d data.Data) {
+func (s StatsData) update(n *Network, ix int, d *data.Data) {
 	totalError, classError := n.GetError(d.Input, d.Output, d.Classes)
 	s.Error.Set(ix, float64(totalError))
 	s.ClassError.Set(ix, float64(classError))

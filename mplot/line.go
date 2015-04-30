@@ -42,7 +42,7 @@ func (l *Line) Thumbnail(c *draw.Canvas) {
 }
 
 // Add function adds new lines to the plot picking a colour from the palette.
-func AddLines(plt *plot.Plot, lines ...*Line) {
+func AddLines(plt *Plot, lines ...*Line) {
 	ps := make([]plot.Plotter, len(lines))
 	for i, line := range lines {
 		line.Color = plotutil.Color(i)
@@ -50,6 +50,7 @@ func AddLines(plt *plot.Plot, lines ...*Line) {
 		if line.Name != "" {
 			plt.Legend.Add(line.Name, line)
 		}
+		plt.ranges = append(plt.ranges, line)
 	}
 	plt.Add(ps...)
 }

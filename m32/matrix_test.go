@@ -27,7 +27,7 @@ func TestTranspose(t *testing.T) {
 
 func TestApply(t *testing.T) {
 	m := New(2, 3).Load(RowMajor, 1.1, 2.2, 3.3)
-	m.Apply(func(x float32) float32 { return 2 * x })
+	m.Apply(m, func(x float32) float32 { return 2 * x })
 	t.Logf("\n%s\n", m)
 	expect := New(2, 3).Load(RowMajor, 2.2, 4.4, 6.6)
 	if !reflect.DeepEqual(m, expect) {

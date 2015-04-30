@@ -138,9 +138,13 @@ func (m *Matrix) Random(min, max float32) *Matrix {
 }
 
 // Apply method updates each element of a matrix using the given function.
-func (m *Matrix) Apply(fn func(float32) float32) *Matrix {
-	for i := range m.data[:m.Rows*m.Cols] {
-		m.data[i] = fn(m.data[i])
+func (m *Matrix) Apply(a *Matrix, fn func(float32) float32) *Matrix {
+	if len(m.data) < a.Rows*a.Cols {
+		panic("m32:Apply - output matrix is too small")
+	}
+	m.Rows, m.Cols = a.Rows, a.Cols
+	for i := range m.data[:a.Rows*a.Cols] {
+		m.data[i] = fn(a.data[i])
 	}
 	return m
 }

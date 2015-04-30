@@ -1,11 +1,13 @@
-package iris
+package data_test
 
 import (
+	"github.com/jnb666/deepthought/data"
+	_ "github.com/jnb666/deepthought/data/iris"
 	"testing"
 )
 
 func TestLayer(t *testing.T) {
-	s, err := Load(10)
+	s, err := data.Load("iris", 10)
 	if err != nil {
 		t.Fatal(err)
 	}

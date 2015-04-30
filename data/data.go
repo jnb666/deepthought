@@ -16,12 +16,13 @@ type Loader interface {
 
 // Dataset type represents a set of test, training and validation data
 type Dataset struct {
-	Test       Data
-	Train      Data
-	Valid      Data
-	NumInputs  int
-	NumOutputs int
-	MaxSamples int
+	Test          *Data
+	Train         *Data
+	Valid         *Data
+	NumInputs     int
+	NumOutputs    int
+	MaxSamples    int
+	OutputToClass func(a, b *m32.Matrix)
 }
 
 // Data type represents a set of test or training data.
@@ -31,6 +32,10 @@ type Data struct {
 	Output     *m32.Matrix
 	Classes    *m32.Matrix
 	NumSamples int
+}
+
+func (d *Data) String() string {
+	return fmt.Sprintf("input:\n%s\noutput:\n%s\nclasses:\n%s", d.Input, d.Output, d.Classes)
 }
 
 // Load function loads and returns a new dataset.
@@ -45,7 +50,7 @@ func Load(name string, samples int) (s Dataset, err error) {
 
 // LoadFile function reads a dataset from a text file.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-func LoadFile(filename string, samples int) (d Data, nin, nout int, err error) {
+func LoadFile(filename string, samples int, out2class func(a, b *m32.Matrix)) (d *Data, nin, nout int, err error) {
 	var file *os.File
 	if file, err = os.Open(filename); err != nil {
 		return
@@ -74,9 +79,11 @@ func LoadFile(filename string, samples int) (d Data, nin, nout int, err error) {
 		}
 	}
 	// format as matrix
+	d = new(Data)
 	d.NumSamples = rows
 	d.Input = m32.New(rows, nin+1).Load(m32.ColMajor, buf...)
 	d.Output = m32.New(rows, nout).Load(m32.ColMajor, buf[rows*(nin+1):]...)
-	d.Classes = m32.New(rows, 1).MaxCol(d.Output)
+	d.Classes = m32.New(rows, 1)
+	out2class(d.Output, d.Classes)
 	return
 }

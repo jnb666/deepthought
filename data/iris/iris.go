@@ -3,6 +3,7 @@ package iris
 import (
 	"errors"
 	"github.com/jnb666/deepthought/data"
+	"github.com/jnb666/deepthought/m32"
 )
 
 // Data directory
@@ -19,13 +20,14 @@ type loader struct{}
 // samples is maxiumum number of records to load from each dataset if non-zero.
 func (loader) Load(samples int) (s data.Dataset, err error) {
 	var nin, nout int
-	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples)
+	s.OutputToClass = func(out, class *m32.Matrix) { class.MaxCol(out) }
+	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
 	}
 	s.MaxSamples = s.Test.NumSamples
 
-	s.Train, nin, nout, err = data.LoadFile(base+"iris_training.dat", samples)
+	s.Train, nin, nout, err = data.LoadFile(base+"iris_training.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
 	}
@@ -36,7 +38,7 @@ func (loader) Load(samples int) (s data.Dataset, err error) {
 		s.MaxSamples = s.Train.NumSamples
 	}
 
-	s.Valid, nin, nout, err = data.LoadFile(base+"iris_validation.dat", samples)
+	s.Valid, nin, nout, err = data.LoadFile(base+"iris_validation.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
 	}

@@ -60,10 +60,11 @@ func NewWindow(width, height int, title string) (w *Window, err error) {
 }
 
 // Update method refreshes the screen
-func (w *Window) Draw(rows, cols int, plt ...*plot.Plot) {
+func (w *Window) Draw(rows, cols int, plt ...*Plot) {
 	// draw plots onto image canvas
 	width, height := w.canvas.Size()
 	for i, p := range plt {
+		// scale the canvas area
 		row, col := i/cols, i%cols
 		x0, y0 := float64(col)/float64(cols), float64(rows-row-1)/float64(rows)
 		x1, y1 := float64(col+1)/float64(cols), float64(rows-row)/float64(rows)
@@ -73,6 +74,14 @@ func (w *Window) Draw(rows, cols int, plt ...*plot.Plot) {
 				draw.Point{vg.Length(x0) * width, vg.Length(y0) * height},
 				draw.Point{vg.Length(x1) * width, vg.Length(y1) * height},
 			},
+		}
+		// rescale the axis limits
+		for _, r := range p.ranges {
+			xmin, xmax, ymin, ymax := r.DataRange()
+			p.X.Min = min(p.X.Min, xmin)
+			p.X.Max = max(p.X.Max, xmax)
+			p.Y.Min = min(p.Y.Min, ymin)
+			p.Y.Max = max(p.Y.Max, ymax)
 		}
 		p.Draw(c)
 	}
@@ -95,8 +104,13 @@ func (w *Window) Draw(rows, cols int, plt ...*plot.Plot) {
 	glfw.PollEvents()
 }
 
-// New default plot to white on black background.
-func New() *plot.Plot {
+type Plot struct {
+	*plot.Plot
+	ranges []plot.DataRanger
+}
+
+// New default plot with white on black background.
+func New() *Plot {
 	p, err := plot.New()
 	if err != nil {
 		panic(err)
@@ -141,5 +155,19 @@ func New() *plot.Plot {
 
 	// add grid
 	p.Add(plotter.NewGrid())
-	return p
+	return &Plot{Plot: p, ranges: []plot.DataRanger{}}
+}
+
+func max(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
