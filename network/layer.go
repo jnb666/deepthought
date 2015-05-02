@@ -8,6 +8,8 @@ import (
 
 func exp(x float32) float32 { return float32(math.Exp(float64(x))) }
 
+func tanh(x float32) float32 { return float32(math.Tanh(float64(x))) }
+
 // Activation interface type represents the activation function and derivative
 type Activation interface {
 	Func(x, y *m32.Matrix)
@@ -16,6 +18,7 @@ type Activation interface {
 
 var (
 	SigmoidActivation = sigmoid{}
+	TanhActivation    = tanhFunc{}
 )
 
 type sigmoid struct{}
@@ -25,7 +28,18 @@ func (a sigmoid) Func(m1, m2 *m32.Matrix) {
 }
 
 func (a sigmoid) Deriv(m1, m2 *m32.Matrix) {
-	m2.Apply(m1, func(y float32) float32 { return y * (1 - y) })
+	a.Func(m1, m2)
+	m2.Apply(m2, func(y float32) float32 { return y * (1 - y) })
+}
+
+type tanhFunc struct{}
+
+func (a tanhFunc) Func(m1, m2 *m32.Matrix) {
+	m2.Apply(m1, func(x float32) float32 { return tanh(x) })
+}
+
+func (a tanhFunc) Deriv(m1, m2 *m32.Matrix) {
+	m2.Apply(m1, func(x float32) float32 { y := tanh(x); return 1 - y*y })
 }
 
 // Layer interface type represents one layer in the network.
@@ -76,7 +90,7 @@ func (l *inputLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 
 type hiddenLayer struct {
 	*inputLayer
-	activation Activation  // nil for linear activation
+	activation Activation
 	deriv      *m32.Matrix // Fp matrix of derivative of activation fn [nin, samples]
 	delta      *m32.Matrix // D matrix of errors at each node [nout, samples]
 	wnobias    *m32.Matrix // W matrix without bias weights [nin, nout]
@@ -97,18 +111,21 @@ func (n *Network) HiddenLayer(nin, nout int, a Activation) {
 func (l *hiddenLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 	l.bias.Rows = in.Rows
 	l.activation.Func(in, l.values)
-	l.activation.Deriv(l.values, l.deriv)
+	l.activation.Deriv(in, l.deriv)
 	l.deriv.Transpose()
 	l.values.Join(l.values, l.bias)
 	return l.output.Mul(l.values, l.weights)
 }
 
 func (l *hiddenLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
+	// propagate error backward
+	l.wnobias.CopyRows(l.weights, 0, l.weights.Rows-1) // [nin, nout]
+	l.delta.Mul(l.wnobias, err)                        // [nin, nout] x [nout, samples]
+	l.delta.MulElem(l.delta, l.deriv)                  // [nin, samples]
+	// update weights
 	l.gradient.Mul(err, l.values).Transpose().Scale(-eta) // [nout, samples] x [samples, nin+1]
 	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
-	l.wnobias.CopyRows(l.weights, 0, l.weights.Rows-1)    // [nin, nout]
-	l.delta.Mul(l.wnobias, err)                           // [nin, nout] x [nout, samples]
-	return l.delta.MulElem(l.delta, l.deriv)              // [nin, samples]
+	return l.delta
 }
 
 type outputLayer struct {
@@ -136,5 +153,6 @@ func (l *outputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 }
 
 func (l *outputLayer) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
-	return l.delta.Add(-1, target, l.values).Transpose()
+	l.delta.Add(-1, target, l.values).Transpose()
+	return l.delta
 }

@@ -22,7 +22,7 @@ var (
 )
 
 // return function with stopping criteria
-func stopCriteria(net *network.Network, stats *network.Stats) func(int) bool {
+func stopCriteria(net *network.Network, d data.Dataset, stats *network.Stats) func(int) bool {
 	return func(epoch int) bool {
 		done := epoch >= maxEpoch || stats.Valid.Error.Last() < threshold
 		if logEvery > 0 && ((epoch+1)%logEvery == 0 || done) {

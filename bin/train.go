@@ -12,8 +12,8 @@ import (
 
 var (
 	batch     = false
-	logEvery  = 0
-	trainRuns = 1
+	logEvery  = 50
+	trainRuns = 20
 	seed      = int64(0)
 )
 
@@ -27,18 +27,26 @@ func checkErr(err error) {
 
 // train the network
 func train(net *network.Network, data data.Dataset, s *network.Stats) {
+	failed := 0
 	for run := 0; run < trainRuns; run++ {
 		net.SetRandomWeights(float32(maxWeight))
-		epoch := net.Train(data, float32(learnRate), s, stopCriteria(net, s))
+		//fmt.Println(net)
+		epoch := net.Train(data, float32(learnRate), s, stopCriteria(net, data, s))
 		status := "**SUCCESS**"
 		if epoch >= maxEpoch-1 {
 			status = "**FAILED **"
+			failed++
 		}
-		fmt.Printf("%s  epochs=%3d  run time=%.3f  reg error=%.3f  class error=%.3f\n",
+		fmt.Printf("%s  epochs=%4d  run time=%.3f  reg error=%.3f  class error=%.3f\n",
 			status, epoch, s.RunTime.Last(), s.RegError.Last(), s.ClsError.Last())
+		if !batch {
+			fmt.Print("hit return for next run")
+			fmt.Fscanln(os.Stdin)
+		}
+
 	}
-	fmt.Printf("num epochs:  %s\nrun time:    %s\nreg error:   %s\nclass error: %s\n",
-		s.NumEpochs, s.RunTime, s.RegError, s.ClsError)
+	fmt.Printf("\n== success rate: %.0f%% ==\nnum epochs:  %s\nrun time:    %s\nreg error:   %s\nclass error: %s\n",
+		100*float64(trainRuns-failed)/float64(trainRuns), s.NumEpochs, s.RunTime, s.RegError, s.ClsError)
 }
 
 func main() {

@@ -15,22 +15,19 @@ const (
 
 // default params
 var (
-	threshold = 0.02
+	threshold = 0.05
 	maxWeight = 1.0
 	maxEpoch  = 1000
-	learnRate = 0.1
+	learnRate = 0.2
 )
 
 // return function with stopping criteria
-func stopCriteria(net *network.Network, stats *network.Stats) func(int) bool {
+func stopCriteria(net *network.Network, d data.Dataset, stats *network.Stats) func(int) bool {
 	return func(epoch int) bool {
 		done := epoch >= maxEpoch || stats.Train.Error.Last() < threshold
-		if logEvery > 0 && ((epoch+1)%logEvery == 0 || done) {
+		if logEvery > 0 && (epoch%logEvery == 0 || done) {
 			fmt.Println(stats)
 		}
-		//if done {
-		//	fmt.Println(net)
-		//}
 		return done
 	}
 }
@@ -39,12 +36,10 @@ func stopCriteria(net *network.Network, stats *network.Stats) func(int) bool {
 func setup() (data.Dataset, *network.Network) {
 	d, err := data.Load("xor", 0)
 	checkErr(err)
-	fmt.Println(d.Train)
 	net := network.NewNetwork(d.MaxSamples)
 	net.InputLayer(2, 2)
-	net.HiddenLayer(2, 1, network.SigmoidActivation)
-	net.OutputLayer(1, network.SigmoidActivation)
-	fmt.Println(net)
+	net.HiddenLayer(2, 1, network.TanhActivation)
+	net.OutputLayer(1, network.TanhActivation)
 	return d, net
 }
 
