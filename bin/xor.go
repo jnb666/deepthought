@@ -9,26 +9,41 @@ import (
 )
 
 const (
-	width  = 400
+	width  = 800
 	height = 800
 )
 
 // default params
 var (
-	threshold = 0.1
-	maxWeight = 0.5
-	maxEpoch  = 200
-	learnRate = 0.5
+	threshold = 0.02
+	maxWeight = 1.0
+	maxEpoch  = 1000
+	learnRate = 0.1
 )
 
-// load the data and setup the network
+// return function with stopping criteria
+func stopCriteria(net *network.Network, stats *network.Stats) func(int) bool {
+	return func(epoch int) bool {
+		done := epoch >= maxEpoch || stats.Train.Error.Last() < threshold
+		if logEvery > 0 && ((epoch+1)%logEvery == 0 || done) {
+			fmt.Println(stats)
+		}
+		//if done {
+		//	fmt.Println(net)
+		//}
+		return done
+	}
+}
+
+// load the data and setup the network with one hidden layer
 func setup() (data.Dataset, *network.Network) {
 	d, err := data.Load("xor", 0)
 	checkErr(err)
 	fmt.Println(d.Train)
 	net := network.NewNetwork(d.MaxSamples)
-	net.Add(network.NewFCLayer(d.NumInputs, 2, d.MaxSamples))
-	net.Add(network.NewFCLayer(2, d.NumOutputs, d.MaxSamples))
+	net.InputLayer(2, 2)
+	net.HiddenLayer(2, 1, network.SigmoidActivation)
+	net.OutputLayer(1, network.SigmoidActivation)
 	fmt.Println(net)
 	return d, net
 }
@@ -44,5 +59,17 @@ func createPlots(stats *network.Stats) (rows, cols int, plots []*mplot.Plot) {
 	p2.X.Label.Text = "epoch"
 	p2.Y.Label.Text = "classification error"
 	mplot.AddLines(p2, mplot.NewLine(stats.Train.ClassError, ""))
-	return 2, 1, []*mplot.Plot{p1, p2}
+	p3 := mplot.New()
+	p3.Title.Text = "Mean value over runs"
+	p3.X.Label.Text = "run number"
+	p3.Y.Label.Text = "num epochs"
+	mplot.AddLines(p3, mplot.NewLine(stats.NumEpochs.Vector, ""))
+	p4 := mplot.New()
+	p4.X.Label.Text = "run number"
+	p4.Y.Label.Text = "average test error"
+	mplot.AddLines(p4,
+		mplot.NewLine(stats.RegError.Vector, "reg error"),
+		mplot.NewLine(stats.ClsError.Vector, "class error"),
+	)
+	return 2, 2, []*mplot.Plot{p1, p3, p2, p4}
 }

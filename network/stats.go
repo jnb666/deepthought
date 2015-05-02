@@ -13,13 +13,14 @@ const (
 
 // Stats struct has matrix with error on each set over time
 type Stats struct {
-	Epoch    int
-	Test     StatsData
-	Train    StatsData
-	Valid    StatsData
-	RunTime  mplot.StatsVector
-	RegError mplot.StatsVector
-	ClsError mplot.StatsVector
+	Epoch     int
+	Test      StatsData
+	Train     StatsData
+	Valid     StatsData
+	NumEpochs mplot.StatsVector
+	RunTime   mplot.StatsVector
+	RegError  mplot.StatsVector
+	ClsError  mplot.StatsVector
 }
 
 // StatsData stores vectors with the errors and classification errors
@@ -33,13 +34,14 @@ type StatsData struct {
 // NewStats function initialises the stats matrices
 func NewStats(nepoch, nruns int) *Stats {
 	return &Stats{
-		Epoch:    1,
-		Test:     newStatsData(nepoch),
-		Train:    newStatsData(nepoch),
-		Valid:    newStatsData(nepoch),
-		RunTime:  mplot.NewStatsVector(nruns, ymin, ymax),
-		RegError: mplot.NewStatsVector(nruns, ymin, ymax),
-		ClsError: mplot.NewStatsVector(nruns, ymin, ymax),
+		Epoch:     1,
+		Test:      newStatsData(nepoch),
+		Train:     newStatsData(nepoch),
+		Valid:     newStatsData(nepoch),
+		NumEpochs: mplot.NewStatsVector(nruns, ymin, ymax),
+		RunTime:   mplot.NewStatsVector(nruns, ymin, ymax),
+		RegError:  mplot.NewStatsVector(nruns, ymin, ymax),
+		ClsError:  mplot.NewStatsVector(nruns, ymin, ymax),
 	}
 }
 
@@ -67,8 +69,17 @@ func (d StatsData) clear() {
 
 // String method prints the stats for logging.
 func (s *Stats) String() string {
-	return fmt.Sprintf("%3d:  train %s   valid %s   test %s",
-		s.Epoch, s.Train, s.Valid, s.Test)
+	str := fmt.Sprintf("%3d:", s.Epoch)
+	if s.Train.Error.Len() > 0 {
+		str += fmt.Sprint("   train ", s.Train)
+	}
+	if s.Valid.Error.Len() > 0 {
+		str += fmt.Sprint("   valid ", s.Valid)
+	}
+	if s.Test.Error.Len() > 0 {
+		str += fmt.Sprint("   test ", s.Test)
+	}
+	return str
 }
 
 func (d StatsData) String() string {

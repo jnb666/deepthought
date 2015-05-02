@@ -64,14 +64,11 @@ func LoadFile(filename string, samples int, out2class func(a, b *m32.Matrix)) (d
 	if samples > 0 && rows > samples {
 		rows = samples
 	}
-	cols := 1 + nin + nout
+	cols := nin + nout
 	// read data
 	buf := make([]float32, rows*cols)
 	for row := 0; row < rows; row++ {
-		buf[row] = 1
-	}
-	for row := 0; row < rows; row++ {
-		for col := 1; col < cols; col++ {
+		for col := 0; col < cols; col++ {
 			if _, err = fmt.Fscan(file, &buf[col*rows+row]); err != nil {
 				err = fmt.Errorf("error reading data value: %s", err)
 				return
@@ -81,8 +78,8 @@ func LoadFile(filename string, samples int, out2class func(a, b *m32.Matrix)) (d
 	// format as matrix
 	d = new(Data)
 	d.NumSamples = rows
-	d.Input = m32.New(rows, nin+1).Load(m32.ColMajor, buf...)
-	d.Output = m32.New(rows, nout).Load(m32.ColMajor, buf[rows*(nin+1):]...)
+	d.Input = m32.New(rows, nin).Load(m32.ColMajor, buf...)
+	d.Output = m32.New(rows, nout).Load(m32.ColMajor, buf[rows*nin:]...)
 	d.Classes = m32.New(rows, 1)
 	out2class(d.Output, d.Classes)
 	return

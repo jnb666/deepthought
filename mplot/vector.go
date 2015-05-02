@@ -103,7 +103,7 @@ func (s *RunningStat) Push(x float64) {
 }
 
 func (s *RunningStat) String() string {
-	return fmt.Sprintf("mean = %.3f  std dev = %.3f  max = %.3f", s.Mean, s.StdDev, s.Max)
+	return fmt.Sprintf("mean = %8.3g  std dev = %8.3g  max = %8.3g", s.Mean, s.StdDev, s.Max)
 }
 
 // StatsVector type combines a vector with associated running stats

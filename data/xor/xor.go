@@ -21,7 +21,7 @@ func (loader) Load(samples int) (s data.Dataset, err error) {
 	s.Train = new(data.Data)
 	s.Train.NumSamples = 4
 	// extra column for bias nodes
-	s.Train.Input = m32.New(4, 3).Load(m32.RowMajor, 0, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1)
+	s.Train.Input = m32.New(4, 2).Load(m32.RowMajor, 0, 0, 0, 1, 1, 0, 1, 1)
 	s.Train.Output = m32.New(4, 1).Load(m32.RowMajor, 0, 1, 1, 0)
 	s.Train.Classes = s.Train.Output
 	s.OutputToClass = func(out, class *m32.Matrix) {

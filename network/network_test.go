@@ -6,33 +6,56 @@ import (
 	"testing"
 )
 
-func TestLayer(t *testing.T) {
-	s, err := data.Load("iris", 10)
+const (
+	weightRange = 0.5
+	maxEpoch    = 200
+)
+
+func createNetwork(batchSize int) (net *Network, s data.Dataset, err error) {
+	if s, err = data.Load("iris", batchSize); err != nil {
+		return
+	}
+	net = NewNetwork(s.MaxSamples)
+	net.InputLayer(s.NumInputs, s.NumOutputs)
+	net.OutputLayer(s.NumOutputs, SigmoidActivation)
+	return
+}
+
+func TestNetwork(t *testing.T) {
+	net, _, err := createNetwork(10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := NewFCLayer(s.NumInputs, s.NumOutputs, 10)
-	l.Weights().Random(-0.5, 0.5)
-	t.Log(l)
-	t.Logf("input:\n%s\n", s.Test.Input)
-	output := l.FeedForward(s.Test.Input)
+	net.SetRandomWeights(weightRange)
+	t.Log(net)
+}
+
+func TestFeedForward(t *testing.T) {
+	net, d, err := createNetwork(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net.SetRandomWeights(weightRange)
+	t.Log(net)
+	t.Logf("input:\n%s\n", d.Test.Input)
+	output := net.FeedForward(d.Test.Input)
 	t.Logf("output:\n%s\n", output)
 }
 
 func TestTrain(t *testing.T) {
-	s, err := data.Load("iris", 0)
+	net, d, err := createNetwork(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	net := NewNetwork(s.MaxSamples)
-	net.Add(NewFCLayer(s.NumInputs, s.NumOutputs, s.MaxSamples))
-	net.SetRandomWeights(0.5)
+	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
+		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
+
+	net.SetRandomWeights(weightRange)
 	t.Log(net)
-	maxEpoch := 200
 	stats := NewStats(maxEpoch, 1)
-	epochs := net.Train(s, 0.5, stats, func(ep int) bool {
+	epochs := net.Train(d, 0.01, stats, func(ep int) bool {
 		done := ep >= maxEpoch || stats.Valid.Error.Last() < 0.1
-		if ep%25 == 0 || done {
+		if ep%10 == 0 || done {
 			t.Log(stats)
 		}
 		return done

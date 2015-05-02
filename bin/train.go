@@ -25,22 +25,11 @@ func checkErr(err error) {
 	}
 }
 
-// return function with stopping criteria
-func stopCriteria(stats *network.Stats) func(int) bool {
-	return func(epoch int) bool {
-		done := epoch >= maxEpoch || stats.Valid.Error.Last() < threshold
-		if logEvery > 0 && ((epoch+1)%logEvery == 0 || done) {
-			fmt.Println(stats)
-		}
-		return done
-	}
-}
-
 // train the network
 func train(net *network.Network, data data.Dataset, s *network.Stats) {
 	for run := 0; run < trainRuns; run++ {
 		net.SetRandomWeights(float32(maxWeight))
-		epoch := net.Train(data, float32(learnRate), s, stopCriteria(s))
+		epoch := net.Train(data, float32(learnRate), s, stopCriteria(net, s))
 		status := "**SUCCESS**"
 		if epoch >= maxEpoch-1 {
 			status = "**FAILED **"
@@ -48,7 +37,8 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 		fmt.Printf("%s  epochs=%3d  run time=%.3f  reg error=%.3f  class error=%.3f\n",
 			status, epoch, s.RunTime.Last(), s.RegError.Last(), s.ClsError.Last())
 	}
-	fmt.Printf("\nrun time:    %s\nreg error:   %s\nclass error: %s\n", s.RunTime, s.RegError, s.ClsError)
+	fmt.Printf("num epochs:  %s\nrun time:    %s\nreg error:   %s\nclass error: %s\n",
+		s.NumEpochs, s.RunTime, s.RegError, s.ClsError)
 }
 
 func main() {

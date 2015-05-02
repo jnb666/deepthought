@@ -17,17 +17,28 @@ const (
 var (
 	threshold = 0.1
 	maxWeight = 0.5
-	maxEpoch  = 200
-	learnRate = 0.5
+	maxEpoch  = 100
+	learnRate = 0.01
 )
 
-// load the data and setup the network
+// return function with stopping criteria
+func stopCriteria(net *network.Network, stats *network.Stats) func(int) bool {
+	return func(epoch int) bool {
+		done := epoch >= maxEpoch || stats.Valid.Error.Last() < threshold
+		if logEvery > 0 && ((epoch+1)%logEvery == 0 || done) {
+			fmt.Println(stats)
+		}
+		return done
+	}
+}
+
+// load the data and setup the network - this is a simple single layer net
 func setup() (data.Dataset, *network.Network) {
 	d, err := data.Load("iris", 0)
 	checkErr(err)
-
 	net := network.NewNetwork(d.MaxSamples)
-	net.Add(network.NewFCLayer(d.NumInputs, d.NumOutputs, d.MaxSamples))
+	net.InputLayer(d.NumInputs, d.NumOutputs)
+	net.OutputLayer(d.NumOutputs, network.SigmoidActivation)
 	return d, net
 }
 
@@ -53,9 +64,9 @@ func createPlots(stats *network.Stats) (rows, cols int, plots []*mplot.Plot) {
 	p3 := mplot.New()
 	p3.Title.Text = "Mean value over runs"
 	p3.X.Label.Text = "run number"
-	p3.Y.Label.Text = "run time"
+	p3.Y.Label.Text = "num epochs"
 	mplot.AddLines(p3,
-		mplot.NewLine(stats.RunTime.Vector, ""),
+		mplot.NewLine(stats.NumEpochs.Vector, ""),
 	)
 	p4 := mplot.New()
 	p4.X.Label.Text = "run number"

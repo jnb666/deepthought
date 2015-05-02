@@ -36,6 +36,19 @@ func TestJoin(t *testing.T) {
 	}
 }
 
+func TestCopy(t *testing.T) {
+	m := New(4, 4).Load(RowMajor, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+	t.Logf("\n%s\n", m)
+	a := New(4, 2).Copy(m, 1, 3)
+	t.Logf("\n%s\n", a)
+	b := New(2, 2).CopyRows(a, 1, 3)
+	t.Logf("\n%s\n", b)
+	expect := New(2, 2).Load(RowMajor, 6, 7, 10, 11)
+	if !reflect.DeepEqual(b, expect) {
+		t.Errorf("expected\n%s\n", expect)
+	}
+}
+
 func TestApply(t *testing.T) {
 	m := New(2, 3).Load(RowMajor, 1.1, 2.2, 3.3)
 	m.Apply(m, func(x float32) float32 { return 2 * x })
@@ -51,15 +64,9 @@ func TestMul(t *testing.T) {
 	t.Logf("a\n%s\n", a)
 	b := New(3, 2).Load(RowMajor, 7, 8, 9, 10, 11, 12)
 	t.Logf("b\n%s\n", b)
-	m := New(2, 2).Mul(a, b, false)
+	m := New(2, 2).Mul(a, b)
 	t.Logf("m\n%s\n", m)
 	expect := New(2, 2).Load(RowMajor, 58, 64, 139, 154)
-	if !reflect.DeepEqual(m, expect) {
-		t.Errorf("expected\n%s\n", expect)
-	}
-	a.Transpose()
-	m.Mul(a, b, true)
-	t.Logf("m [trans]\n%s\n", m)
 	if !reflect.DeepEqual(m, expect) {
 		t.Errorf("expected\n%s\n", expect)
 	}

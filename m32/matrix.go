@@ -25,7 +25,12 @@ type Matrix struct {
 
 // New function creates a new matrix of given size.
 func New(rows, cols int) *Matrix {
-	return &Matrix{Rows: rows, Cols: cols, data: make([]float32, rows*cols), format: "%8.4g"}
+	return &Matrix{Rows: rows, Cols: cols, data: make([]float32, rows*cols), format: "%8.4f"}
+}
+
+// Size method returns the capacity of the data buffer
+func (m *Matrix) Size() int {
+	return len(m.data)
 }
 
 // Transpose method updates the data in place to transpose the matrix.
@@ -79,12 +84,36 @@ func (m *Matrix) Join(a, b *Matrix) *Matrix {
 	if a.Rows != b.Rows {
 		panic("m32:Join - input matrices must have same number of rows")
 	}
-	if (a.Cols+b.Cols)*a.Rows < len(m.data) {
+	if len(m.data) < (a.Cols+b.Cols)*a.Rows {
 		panic("m32:Join - output matrix is too small")
 	}
 	m.Rows, m.Cols = a.Rows, a.Cols+b.Cols
 	copy(m.data, a.data[:a.Rows*a.Cols])
 	copy(m.data[a.Rows*a.Cols:], b.data[:b.Rows*b.Cols])
+	return m
+}
+
+// Copy method makes a copy of the matrix with columns [start:end] exclusive.
+func (m *Matrix) Copy(a *Matrix, start, end int) *Matrix {
+	if len(m.data) < (end-start)*a.Rows {
+		panic("m32:Copy - output matrix is too small")
+	}
+	m.Rows = a.Rows
+	m.Cols = end - start
+	copy(m.data, a.data[start*a.Rows:end*a.Rows])
+	return m
+}
+
+// CopyRows method makes a copy of the matrix with rows [start:end] exclusive.
+func (m *Matrix) CopyRows(a *Matrix, start, end int) *Matrix {
+	if len(m.data) < (end-start)*a.Cols {
+		panic("m32:CopyRows - output matrix is too small")
+	}
+	m.Rows = end - start
+	m.Cols = a.Cols
+	for i := 0; i < a.Cols; i++ {
+		copy(m.data[i*m.Rows:], a.data[i*a.Rows+start:i*a.Rows+end])
+	}
 	return m
 }
 
@@ -169,35 +198,21 @@ func (m *Matrix) Add(s float32, a, b *Matrix) *Matrix {
 }
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
-// If the aTrans flag is set then transpose matrix a.
-func (m *Matrix) Mul(a, b *Matrix, aTrans bool) *Matrix {
-	if (aTrans && a.Rows != b.Rows) || (!aTrans && a.Cols != b.Rows) {
+func (m *Matrix) Mul(a, b *Matrix) *Matrix {
+	if a.Cols != b.Rows {
 		panic("m32:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	if (aTrans && len(m.data) < a.Cols*b.Cols) || (!aTrans && len(m.data) < a.Rows*b.Cols) {
+	if len(m.data) < a.Rows*b.Cols {
 		panic("m32:Mul - output matrix is too small")
 	}
-	if aTrans {
-		m.Rows, m.Cols = a.Cols, b.Cols
-		for col := 0; col < m.Cols; col++ {
-			for row := 0; row < m.Rows; row++ {
-				sum := float32(0)
-				for k := 0; k < a.Rows; k++ {
-					sum += a.data[k+row*a.Rows] * b.data[k+col*b.Rows]
-				}
-				m.data[col*m.Rows+row] = sum
+	m.Rows, m.Cols = a.Rows, b.Cols
+	for col := 0; col < m.Cols; col++ {
+		for row := 0; row < m.Rows; row++ {
+			sum := float32(0)
+			for k := 0; k < a.Cols; k++ {
+				sum += a.data[row+k*a.Rows] * b.data[k+col*b.Rows]
 			}
-		}
-	} else {
-		m.Rows, m.Cols = a.Rows, b.Cols
-		for col := 0; col < m.Cols; col++ {
-			for row := 0; row < m.Rows; row++ {
-				sum := float32(0)
-				for k := 0; k < a.Cols; k++ {
-					sum += a.data[row+k*a.Rows] * b.data[k+col*b.Rows]
-				}
-				m.data[col*m.Rows+row] = sum
-			}
+			m.data[col*m.Rows+row] = sum
 		}
 	}
 	return m

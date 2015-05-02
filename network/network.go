@@ -9,51 +9,65 @@ import (
 	"time"
 )
 
+const epsilon = 1e-10
+
 // Neural network type is an array of layers.
 type Network struct {
-	Nodes     []Layer
-	BatchSize int
+	nodes     []Layer
+	delta     []*m32.Matrix
+	layers    int
+	batchSize int
 	classes   *m32.Matrix
+	bias      *m32.Matrix
 	out2class func(a, b *m32.Matrix)
 }
 
-// NewNetwork function initialises a new network
-func NewNetwork(batchSize int) *Network {
+// NewNetwork function initialises a new network, samples is the maximum number of samples, i.e. minibatch size.
+func NewNetwork(samples int) *Network {
 	return &Network{
-		Nodes:     []Layer{},
-		BatchSize: batchSize,
-		classes:   m32.New(batchSize, 1),
+		batchSize: samples,
+		classes:   m32.New(samples, 1),
+		bias:      m32.New(samples, 1).Load(m32.ColMajor, 1),
 	}
 }
 
 // Add method appends a new layer to the network
 func (n *Network) Add(l Layer) {
-	n.Nodes = append(n.Nodes, l)
+	n.nodes = append(n.nodes, l)
+	n.delta = append(n.delta, nil)
+	n.layers++
 }
 
 // String method returns a printable representation of the network.
 func (n *Network) String() string {
-	str := make([]string, len(n.Nodes))
-	for i, layer := range n.Nodes {
-		str[i] = layer.String()
+	str := make([]string, len(n.nodes))
+	for i, layer := range n.nodes[:n.layers-1] {
+		str[i] = fmt.Sprintf("== Layer %d ==\n%s", i, layer.Weights())
 	}
 	return strings.Join(str, "\n")
 }
 
 // SetRandomWeights method initalises the weights to random values from -max to +max.
 func (n *Network) SetRandomWeights(max float32) {
-	for _, l := range n.Nodes {
+	for _, l := range n.nodes[:n.layers-1] {
 		l.Weights().Random(-max, max)
 	}
 }
 
-// Run method calculates output from the network given input
-func (n *Network) FeedForward(input *m32.Matrix) *m32.Matrix {
-	output := n.Nodes[0].FeedForward(input)
-	for _, layer := range n.Nodes[1:] {
-		output = layer.FeedForward(output)
+// FeedForward method calculates output from the network given input
+func (n *Network) FeedForward(m *m32.Matrix) *m32.Matrix {
+	for _, layer := range n.nodes {
+		m = layer.FeedForward(m)
 	}
-	return output
+	return m
+}
+
+// BackProp method performs backpropagation of the errors for each layer and updates the weights
+func (n *Network) BackProp(target *m32.Matrix, eta float32) {
+	n.delta[n.layers-1] = n.nodes[n.layers-1].BackProp(target, eta)
+	for i := n.layers - 2; i >= 0; i-- {
+		n.delta[i] = n.nodes[i].BackProp(n.delta[i+1], eta)
+	}
 }
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
@@ -65,47 +79,29 @@ func (n *Network) GetError(input, target, targetClass *m32.Matrix) (totalError, 
 	return
 }
 
-// Errors method returns the error matrix for the ith layer, or nil of layer does not exist
-func (n *Network) Errors(i int) *m32.Matrix {
-	if i >= 0 && i < len(n.Nodes) {
-		return n.Nodes[i].Errors()
-	}
-	return nil
-}
-
 // Train method trains the network on the given training set and updates the stats.
 // stop callback function returns true if we should terminate the run.
-func (n *Network) Train(t data.Dataset, learnRate float32, s *Stats, stop func(int) bool) int {
-	n.out2class = t.OutputToClass
-	// reset stats
+func (n *Network) Train(d data.Dataset, learnRate float32, s *Stats, stop func(int) bool) int {
+	n.out2class = d.OutputToClass
 	s.Clear()
 	start := time.Now()
-	last := len(n.Nodes) - 1
 	for {
-		// forward propagate input
-		output := n.FeedForward(t.Train.Input)
-
-		// errors at output
-		n.Errors(last).Add(-1, output, t.Train.Output)
-
-		// back propagate errors
-		for i := last; i >= 0; i-- {
-			n.Nodes[i].BackProp(learnRate, n.Errors(i-1))
-		}
-
-		// update stats
-		s.Update(n, t)
-
-		// next epoch
+		n.FeedForward(d.Train.Input)
+		n.BackProp(d.Train.Output, learnRate)
+		s.Update(n, d)
 		if stop(s.Epoch) {
 			break
 		}
 		s.Epoch++
 	}
-	// per run stats
+	s.NumEpochs.Push(float64(s.Epoch + 1))
 	s.RunTime.Push(time.Since(start).Seconds())
-	s.RegError.Push(s.Test.Error.Last())
-	s.ClsError.Push(s.Test.ClassError.Last())
+	test := s.Test
+	if test.Error.Len() == 0 {
+		test = s.Train
+	}
+	s.RegError.Push(test.Error.Last())
+	s.ClsError.Push(test.ClassError.Last())
 	return s.Epoch
 }
 
