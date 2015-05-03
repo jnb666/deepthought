@@ -10,11 +10,17 @@ import (
 	"runtime"
 )
 
+const (
+	width  = 800
+	height = 800
+)
+
 var (
+	debug     = false
 	batch     = false
-	logEvery  = 50
+	logEvery  = 0
 	trainRuns = 20
-	seed      = int64(0)
+	seed      = int64(1)
 )
 
 // exit if fatal error
@@ -25,12 +31,29 @@ func checkErr(err error) {
 	}
 }
 
+// return function with stopping criteria
+func stopCriteria(net *network.Network, d data.Dataset, stats *network.Stats) func(int) bool {
+	return func(epoch int) bool {
+		done := epoch >= maxEpoch || stats.Valid.Error.Last() < threshold
+		if logEvery > 0 && (epoch%logEvery == 0 || done) {
+			fmt.Println(stats)
+		}
+		return done
+	}
+}
+
 // train the network
 func train(net *network.Network, data data.Dataset, s *network.Stats) {
 	failed := 0
 	for run := 0; run < trainRuns; run++ {
-		net.SetRandomWeights(float32(maxWeight))
-		//fmt.Println(net)
+		if !batch && run > 0 {
+			fmt.Print("hit return for next run")
+			fmt.Fscanln(os.Stdin)
+		}
+		net.SetRandomWeights()
+		if debug {
+			fmt.Println(net)
+		}
 		epoch := net.Train(data, float32(learnRate), s, stopCriteria(net, data, s))
 		status := "**SUCCESS**"
 		if epoch >= maxEpoch-1 {
@@ -39,14 +62,48 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 		}
 		fmt.Printf("%s  epochs=%4d  run time=%.3f  reg error=%.3f  class error=%.3f\n",
 			status, epoch, s.RunTime.Last(), s.RegError.Last(), s.ClsError.Last())
-		if !batch {
-			fmt.Print("hit return for next run")
-			fmt.Fscanln(os.Stdin)
+		if debug {
+			fmt.Println(net)
 		}
-
 	}
 	fmt.Printf("\n== success rate: %.0f%% ==\nnum epochs:  %s\nrun time:    %s\nreg error:   %s\nclass error: %s\n",
 		100*float64(trainRuns-failed)/float64(trainRuns), s.NumEpochs, s.RunTime, s.RegError, s.ClsError)
+}
+
+// setup the plots
+func createPlots(stats *network.Stats) (rows, cols int, plots []*mplot.Plot) {
+	p1 := mplot.New()
+	p1.Title.Text = fmt.Sprintf("Learning rate = %g", learnRate)
+	p1.X.Label.Text = "epoch"
+	p1.Y.Label.Text = "average error"
+	mplot.AddLines(p1,
+		mplot.NewLine(stats.Train.Error, "training"),
+		mplot.NewLine(stats.Valid.Error, "validation"),
+		mplot.NewLine(stats.Test.Error, "test set"),
+	)
+	p2 := mplot.New()
+	p2.X.Label.Text = "epoch"
+	p2.Y.Label.Text = "classification error"
+	mplot.AddLines(p2,
+		mplot.NewLine(stats.Train.ClassError, "training"),
+		mplot.NewLine(stats.Valid.ClassError, "validation"),
+		mplot.NewLine(stats.Test.ClassError, "test set"),
+	)
+	p3 := mplot.New()
+	p3.Title.Text = "Mean value over runs"
+	p3.X.Label.Text = "run number"
+	p3.Y.Label.Text = "num epochs"
+	mplot.AddLines(p3,
+		mplot.NewLine(stats.NumEpochs.Vector, ""),
+	)
+	p4 := mplot.New()
+	p4.X.Label.Text = "run number"
+	p4.Y.Label.Text = "average test error"
+	mplot.AddLines(p4,
+		mplot.NewLine(stats.RegError.Vector, "reg error"),
+		mplot.NewLine(stats.ClsError.Vector, "class error"),
+	)
+	return 2, 2, []*mplot.Plot{p1, p3, p2, p4}
 }
 
 func main() {

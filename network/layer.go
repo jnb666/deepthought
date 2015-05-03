@@ -1,7 +1,6 @@
 package network
 
 import (
-	"fmt"
 	"github.com/jnb666/deepthought/m32"
 	"math"
 )
@@ -91,7 +90,7 @@ func (l *inputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 func (l *inputLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 	etas := -eta / float32(l.values.Rows)
 	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]
-	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
+	//l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
 	return nil
 }
 
@@ -129,24 +128,28 @@ func (l *hiddenLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 	l.wnobias.CopyRows(l.weights, 0, l.weights.Rows-1) // [nin, nout]
 	l.delta.Mul(l.wnobias, err)                        // [nin, nout] x [nout, samples]
 	l.delta.MulElem(l.delta, l.deriv)                  // [nin, samples]
-	// update weights
+	// calc weight gradient
 	etas := -eta / float32(l.values.Rows)
 	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]
-	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
+	//l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
 	return l.delta
 }
 
 type outputLayer struct {
-	values *m32.Matrix // Z matrix of values at each node [samples, nodes]
-	delta  *m32.Matrix // D matrix of errors at each node [nodes, samples]
-	temp   *m32.Matrix
+	activation Activation
+	values     *m32.Matrix // Z matrix of values at each node [samples, nodes]
+	delta      *m32.Matrix // D matrix of errors at each node [nodes, samples]
+	deriv      *m32.Matrix // Fp matrix of derivative of activation fn [nin, samples]
+	temp       *m32.Matrix
 }
 
-func newOutputLayer(batch, nodes int) *outputLayer {
+func newOutputLayer(batch, nodes int, a Activation) *outputLayer {
 	return &outputLayer{
-		values: m32.New(batch, nodes),
-		delta:  m32.New(nodes, batch),
-		temp:   m32.New(batch, nodes),
+		activation: a,
+		values:     m32.New(batch, nodes),
+		delta:      m32.New(nodes, batch),
+		deriv:      m32.New(nodes, batch),
+		temp:       m32.New(batch, nodes),
 	}
 }
 
@@ -158,26 +161,18 @@ func (l *outputLayer) Gradient() *m32.Matrix {
 	panic("no gradient for output layer!")
 }
 
-type quadraticOutput struct {
-	*outputLayer
-	activation Activation
-	deriv      *m32.Matrix // Fp matrix of derivative of activation fn [nin, samples]
-}
-
-// QuadraticOutput method appends a quadratic cost output layer to the network.
-func (n *Network) QuadraticOutput(nodes int, a Activation) {
-	n.Add(&quadraticOutput{
-		outputLayer: newOutputLayer(n.batchSize, nodes),
-		activation:  a,
-		deriv:       m32.New(nodes, n.batchSize),
-	})
-}
-
-func (l *quadraticOutput) FeedForward(in *m32.Matrix) *m32.Matrix {
+func (l *outputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 	l.activation.Func(in, l.values)
 	l.activation.Deriv(in, l.deriv)
 	l.deriv.Transpose()
 	return l.values
+}
+
+type quadraticOutput struct{ *outputLayer }
+
+// QuadraticOutput method appends a quadratic cost output layer to the network.
+func (n *Network) QuadraticOutput(nodes int, a Activation) {
+	n.Add(&quadraticOutput{newOutputLayer(n.batchSize, nodes, a)})
 }
 
 func (l *quadraticOutput) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
@@ -189,20 +184,11 @@ func (l *quadraticOutput) Cost(target *m32.Matrix) float64 {
 	return 0.5 * m32.SumDiff2(l.values, target) / float64(target.Rows)
 }
 
-type crossEntropy struct {
-	*outputLayer
-}
+type crossEntropy struct{ *outputLayer }
 
 // CrossEntropyOutput method appends a cross entropy output layer to the network.
-func (n *Network) CrossEntropyOutput(nodes int) {
-	n.Add(&crossEntropy{
-		outputLayer: newOutputLayer(n.batchSize, nodes),
-	})
-}
-
-func (l *crossEntropy) FeedForward(in *m32.Matrix) *m32.Matrix {
-	l.values = in
-	return l.values
+func (n *Network) CrossEntropyOutput(nodes int, a Activation) {
+	n.Add(&crossEntropy{newOutputLayer(n.batchSize, nodes, a)})
 }
 
 func (l *crossEntropy) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
@@ -210,16 +196,10 @@ func (l *crossEntropy) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
 }
 
 func (l *crossEntropy) Cost(target *m32.Matrix) float64 {
-	fmt.Printf("**values [x]**\n%s\n", l.values)
-	fmt.Printf("**target [y]**\n%s\n", target)
-
 	l.temp.Apply2(l.values, target,
 		func(x, y float32) float32 {
-			z := -y*log(x) - (1-y)*log(1-x)
-			fmt.Printf("%7.4f %7.4f => %g\n", x, y, z)
-			return nanToNum(z)
+			return nanToNum(-y*log(x) - (1-y)*log(1-x))
 		})
-	fmt.Printf("**cost**\n%s\n", l.temp)
 	return l.temp.Sum()
 }
 

@@ -10,18 +10,18 @@ import (
 var (
 	threshold = 0.1
 	maxEpoch  = 50
-	learnRate = 10.0
+	learnRate = 2.0
 )
 
 // load the data and setup the network - this is a simple single layer net
 func setup() (data.Dataset, *network.Network) {
-	fmt.Printf("IRIS DATASET: single layer with quadratic cost, eta=%.g\n", learnRate)
-	d, err := data.Load("iris", 0)
+	fmt.Printf("IRIS DATASET: single layer with cross entropy cost, eta=%.g\n", learnRate)
+	d, err := data.Load("iris", 10)
 	checkErr(err)
 	net := network.NewNetwork(d.MaxSamples)
 	net.InputLayer(d.NumInputs, d.NumOutputs)
-	net.QuadraticOutput(d.NumOutputs, network.SigmoidActivation)
+	net.CrossEntropyOutput(d.NumOutputs, network.SigmoidActivation)
 	// for debug - enable gradient checking
-	net.CheckGradient(10, 0.01)
+	//net.CheckGradient(10, 0.01)
 	return d, net
 }
