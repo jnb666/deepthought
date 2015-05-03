@@ -90,7 +90,7 @@ func (l *inputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 func (l *inputLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 	etas := -eta / float32(l.values.Rows)
 	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]
-	//l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
+	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
 	return nil
 }
 
@@ -128,10 +128,10 @@ func (l *hiddenLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 	l.wnobias.CopyRows(l.weights, 0, l.weights.Rows-1) // [nin, nout]
 	l.delta.Mul(l.wnobias, err)                        // [nin, nout] x [nout, samples]
 	l.delta.MulElem(l.delta, l.deriv)                  // [nin, samples]
-	// calc weight gradient
+	// update weights
 	etas := -eta / float32(l.values.Rows)
 	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]
-	//l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
+	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
 	return l.delta
 }
 
@@ -200,7 +200,7 @@ func (l *crossEntropy) Cost(target *m32.Matrix) float64 {
 		func(x, y float32) float32 {
 			return nanToNum(-y*log(x) - (1-y)*log(1-x))
 		})
-	return l.temp.Sum()
+	return 2 * l.temp.Sum() / float64(target.Rows)
 }
 
 // util functions

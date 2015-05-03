@@ -76,15 +76,10 @@ func (n *Network) FeedForward(m *m32.Matrix) *m32.Matrix {
 }
 
 // BackProp method performs backpropagation of the errors for each layer and updates the weights
-func (n *Network) BackProp(input, target *m32.Matrix, eta float32, check bool) {
+func (n *Network) BackProp(target *m32.Matrix, eta float32) {
 	n.delta[n.layers-1] = n.nodes[n.layers-1].BackProp(target, eta)
 	for i := n.layers - 2; i >= 0; i-- {
-		layer := n.nodes[i]
-		n.delta[i] = layer.BackProp(n.delta[i+1], eta)
-		if check {
-			n.doCheck(layer, input, target)
-		}
-		layer.Weights().Add(1, layer.Weights(), layer.Gradient())
+		n.delta[i] = n.nodes[i].BackProp(n.delta[i+1], eta)
 	}
 }
 
@@ -103,40 +98,42 @@ func (n *Network) CheckGradient(nepochs int, maxError float64) {
 	n.checkMax = maxError
 }
 
-// perform the check for the given layer
-func (n *Network) doCheck(layer Layer, input, target *m32.Matrix) (ok bool) {
+func (n *Network) doCheck(input, target *m32.Matrix) (ok bool) {
 	output := n.nodes[n.layers-1]
-	w := layer.Weights()
-	weight := w.Data()
-	grads := layer.Gradient().Data()
-	diffs := make([]float32, w.Rows*w.Cols)
-	projs := make([]float32, w.Rows*w.Cols)
-	maxDiff := 0.0
-	for i, val := range weight {
-		weight[i] = val - epsilon
-		n.FeedForward(input)
-		cost1 := output.Cost(target)
-		weight[i] = val + epsilon
-		n.FeedForward(input)
-		cost2 := output.Cost(target)
-		g1 := float64(grads[i])
-		g2 := (cost1 - cost2) / (2.0 * epsilon)
-		dg := math.Abs(g1-g2) / (math.Abs(g1) + math.Abs(g2))
-		maxDiff = math.Max(maxDiff, dg)
-		projs[i] = float32(g2)
-		diffs[i] = float32(dg)
-		weight[i] = val
-	}
-	fmt.Printf("LAYER %d : max diff=%.8f\n", 0, maxDiff)
-	if maxDiff > n.checkMax {
-		layer.Gradient().SetFormat("%9.6f")
-		proj := m32.New(w.Rows, w.Cols).Load(m32.ColMajor, projs...)
-		proj.SetFormat("%9.6f")
-		diff := m32.New(w.Rows, w.Cols).Load(m32.ColMajor, diffs...)
-		diff.SetFormat("%9.6f")
-		fmt.Printf("*** WARNING *** GRADIENTS LOOK WRONG!\n%s\n\n%s\n\n%s\n",
-			layer.Gradient(), proj, diff)
-		ok = false
+	ok = true
+	for i, layer := range n.nodes[:n.layers-1] {
+		w := layer.Weights()
+		weight := w.Data()
+		grads := layer.Gradient().Data()
+		diffs := make([]float32, w.Rows*w.Cols)
+		projs := make([]float32, w.Rows*w.Cols)
+		maxDiff := 0.0
+		for i, val := range weight {
+			weight[i] = val - epsilon
+			n.FeedForward(input)
+			cost1 := output.Cost(target)
+			weight[i] = val + epsilon
+			n.FeedForward(input)
+			cost2 := output.Cost(target)
+			g1 := float64(grads[i])
+			g2 := (cost1 - cost2) / (2.0 * epsilon)
+			dg := math.Abs(g1 - g2)
+			maxDiff = math.Max(maxDiff, dg)
+			projs[i] = float32(g2)
+			diffs[i] = float32(dg)
+			weight[i] = val
+		}
+		fmt.Printf("LAYER %d : max diff=%.8f\n", i, maxDiff)
+		if maxDiff > n.checkMax {
+			layer.Gradient().SetFormat("%9.6f")
+			proj := m32.New(w.Rows, w.Cols).Load(m32.ColMajor, projs...)
+			proj.SetFormat("%9.6f")
+			diff := m32.New(w.Rows, w.Cols).Load(m32.ColMajor, diffs...)
+			diff.SetFormat("%9.6f")
+			fmt.Printf("*** WARNING *** GRADIENTS LOOK WRONG!\n%s\n\n%s\n\n%s\n",
+				layer.Gradient(), proj, diff)
+			ok = false
+		}
 	}
 	return
 }
@@ -148,8 +145,10 @@ func (n *Network) Train(d data.Dataset, learnRate float32, s *Stats, stop func(i
 	s.StartRun()
 	for {
 		n.FeedForward(d.Train.Input)
-		doCheck := n.checkEvery > 0 && s.Epoch%n.checkEvery == 0
-		n.BackProp(d.Train.Input, d.Train.Output, learnRate, doCheck)
+		n.BackProp(d.Train.Output, learnRate)
+		if n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
+			n.doCheck(d.Train.Input, d.Train.Output)
+		}
 		s.Update(n, d)
 		if stop(s.Epoch) {
 			break

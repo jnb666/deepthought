@@ -9,8 +9,8 @@ import (
 
 var (
 	threshold = 0.1
-	maxEpoch  = 50
-	learnRate = 10.0
+	maxEpoch  = 200
+	learnRate = 2.0
 )
 
 // load the data and setup the network - this is a simple single layer net
@@ -22,6 +22,6 @@ func setup() (data.Dataset, *network.Network) {
 	net.InputLayer(d.NumInputs, d.NumOutputs)
 	net.QuadraticOutput(d.NumOutputs, network.SigmoidActivation)
 	// for debug - enable gradient checking
-	net.CheckGradient(10, 0.01)
+	//net.CheckGradient(10, 0.02)
 	return d, net
 }
