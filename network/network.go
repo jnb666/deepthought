@@ -116,7 +116,7 @@ func (n *Network) doCheck(input, target *m32.Matrix) (ok bool) {
 			n.FeedForward(input)
 			cost2 := output.Cost(target)
 			g1 := float64(grads[i])
-			g2 := (cost1 - cost2) / (2.0 * epsilon)
+			g2 := -(cost2 - cost1) / (2.0 * epsilon)
 			dg := math.Abs(g1 - g2)
 			maxDiff = math.Max(maxDiff, dg)
 			projs[i] = float32(g2)
@@ -140,7 +140,7 @@ func (n *Network) doCheck(input, target *m32.Matrix) (ok bool) {
 
 // Train method trains the network on the given training set and updates the stats.
 // stop callback function returns true if we should terminate the run.
-func (n *Network) Train(d data.Dataset, learnRate float32, s *Stats, stop func(int) bool) int {
+func (n *Network) Train(d data.Dataset, learnRate float32, s *Stats, stop func(*Stats) bool) int {
 	n.out2class = d.OutputToClass
 	s.StartRun()
 	for {
@@ -150,7 +150,7 @@ func (n *Network) Train(d data.Dataset, learnRate float32, s *Stats, stop func(i
 			n.doCheck(d.Train.Input, d.Train.Output)
 		}
 		s.Update(n, d)
-		if stop(s.Epoch) {
+		if stop(s) {
 			break
 		}
 		s.Epoch++

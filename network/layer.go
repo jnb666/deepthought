@@ -128,6 +128,7 @@ func (l *hiddenLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 	l.wnobias.CopyRows(l.weights, 0, l.weights.Rows-1) // [nin, nout]
 	l.delta.Mul(l.wnobias, err)                        // [nin, nout] x [nout, samples]
 	l.delta.MulElem(l.delta, l.deriv)                  // [nin, samples]
+
 	// update weights
 	etas := -eta / float32(l.values.Rows)
 	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]

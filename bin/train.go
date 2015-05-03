@@ -32,14 +32,18 @@ func checkErr(err error) {
 }
 
 // return function with stopping criteria
-func stopCriteria(net *network.Network, d data.Dataset, stats *network.Stats) func(int) bool {
-	return func(epoch int) bool {
-		done := epoch >= maxEpoch || stats.Valid.Error.Last() < threshold
-		if logEvery > 0 && (epoch%logEvery == 0 || done) {
-			fmt.Println(stats)
-		}
-		return done
+func stopCriteria(s *network.Stats) bool {
+	var cost float64
+	if s.Valid.Error.Len() > 0 {
+		cost = s.Valid.Error.Last()
+	} else {
+		cost = s.Train.Error.Last()
 	}
+	done := s.Epoch >= maxEpoch || cost < threshold
+	if logEvery > 0 && (s.Epoch%logEvery == 0 || done) {
+		fmt.Println(s)
+	}
+	return done
 }
 
 // train the network
@@ -54,7 +58,7 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 		if debug {
 			fmt.Println(net)
 		}
-		epoch := net.Train(data, float32(learnRate), s, stopCriteria(net, data, s))
+		epoch := net.Train(data, float32(learnRate), s, stopCriteria)
 		status := "**SUCCESS**"
 		if epoch >= maxEpoch-1 {
 			status = "**FAILED **"
@@ -64,6 +68,7 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 			status, epoch, s.RunTime.Last(), s.RegError.Last(), s.ClsError.Last())
 		if debug {
 			fmt.Println(net)
+			//fmt.Println(net.FeedForward(data.Train.Input))
 		}
 	}
 	fmt.Printf("\n== success rate: %.0f%% ==\nnum epochs:  %s\nrun time:    %s\nreg error:   %s\nclass error: %s\n",
@@ -71,31 +76,22 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 }
 
 // setup the plots
-func createPlots(stats *network.Stats) (rows, cols int, plots []*mplot.Plot) {
+func createPlots(stats *network.Stats, d data.Dataset) (rows, cols int, plots []*mplot.Plot) {
 	p1 := mplot.New()
 	p1.Title.Text = fmt.Sprintf("Learning rate = %g", learnRate)
+	pError, pClass := stats.ErrorPlots(d)
 	p1.X.Label.Text = "epoch"
 	p1.Y.Label.Text = "average error"
-	mplot.AddLines(p1,
-		mplot.NewLine(stats.Train.Error, "training"),
-		mplot.NewLine(stats.Valid.Error, "validation"),
-		mplot.NewLine(stats.Test.Error, "test set"),
-	)
+	mplot.AddLines(p1, pError...)
 	p2 := mplot.New()
 	p2.X.Label.Text = "epoch"
 	p2.Y.Label.Text = "classification error"
-	mplot.AddLines(p2,
-		mplot.NewLine(stats.Train.ClassError, "training"),
-		mplot.NewLine(stats.Valid.ClassError, "validation"),
-		mplot.NewLine(stats.Test.ClassError, "test set"),
-	)
+	mplot.AddLines(p2, pClass...)
 	p3 := mplot.New()
 	p3.Title.Text = "Mean value over runs"
 	p3.X.Label.Text = "run number"
 	p3.Y.Label.Text = "num epochs"
-	mplot.AddLines(p3,
-		mplot.NewLine(stats.NumEpochs.Vector, ""),
-	)
+	mplot.AddLines(p3, mplot.NewLine(stats.NumEpochs.Vector, ""))
 	p4 := mplot.New()
 	p4.X.Label.Text = "run number"
 	p4.Y.Label.Text = "average test error"
@@ -108,6 +104,7 @@ func createPlots(stats *network.Stats) (rows, cols int, plots []*mplot.Plot) {
 
 func main() {
 	// get params
+	flag.BoolVar(&debug, "debug", debug, "enable debug printing and gradient checks")
 	flag.BoolVar(&batch, "batch", batch, "set batch mode to disable plotting")
 	flag.Int64Var(&seed, "seed", seed, "random number seed - or 0 to use current time")
 	flag.IntVar(&maxEpoch, "epochs", maxEpoch, "maximum number of epochs")
@@ -129,10 +126,8 @@ func main() {
 	} else {
 		window, err := mplot.NewWindow(width, height, "trainer")
 		checkErr(err)
-		rows, cols, plt := createPlots(stats)
-
+		rows, cols, plt := createPlots(stats, data)
 		go train(net, data, stats)
-
 		for !window.ShouldClose() {
 			window.Draw(rows, cols, plt...)
 		}

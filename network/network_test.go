@@ -47,10 +47,10 @@ func TestTrain(t *testing.T) {
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
 	t.Log(net)
 	stats := NewStats(maxEpoch, 1)
-	epochs := net.Train(d, 10, stats, func(ep int) bool {
-		done := ep >= maxEpoch || stats.Valid.Error.Last() < 0.1
-		if ep%10 == 0 || done {
-			t.Log(stats)
+	epochs := net.Train(d, 10, stats, func(s *Stats) bool {
+		done := s.Epoch >= maxEpoch || s.Valid.Error.Last() < 0.1
+		if s.Epoch%10 == 0 || done {
+			t.Log(s)
 		}
 		return done
 	})

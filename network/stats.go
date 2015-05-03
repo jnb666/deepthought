@@ -122,3 +122,20 @@ func (s StatsData) update(n *Network, ix int, d *data.Data) {
 	s.AvgError.Set(ix, totalError)
 	s.AvgClassError.Set(ix, classError)
 }
+
+// ErrorPlots method returns a line plots for each error curve
+func (s *Stats) ErrorPlots(d data.Dataset) (p1, p2 []*mplot.Line) {
+	if d.Train != nil {
+		p1 = append(p1, mplot.NewLine(s.Train.Error, "training"))
+		p2 = append(p2, mplot.NewLine(s.Train.ClassError, "training"))
+	}
+	if d.Valid != nil {
+		p1 = append(p1, mplot.NewLine(s.Valid.Error, "validation"))
+		p2 = append(p2, mplot.NewLine(s.Valid.ClassError, "validation"))
+	}
+	if d.Test != nil {
+		p1 = append(p1, mplot.NewLine(s.Test.Error, "test set"))
+		p2 = append(p2, mplot.NewLine(s.Test.ClassError, "test set"))
+	}
+	return
+}

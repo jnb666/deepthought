@@ -86,9 +86,9 @@ func (m *Matrix) Join(a, b *Matrix) *Matrix {
 	if len(m.data) < (a.Cols+b.Cols)*a.Rows {
 		panic("m32:Join - output matrix is too small")
 	}
-	m.Rows, m.Cols = a.Rows, a.Cols+b.Cols
 	copy(m.data, a.data[:a.Rows*a.Cols])
 	copy(m.data[a.Rows*a.Cols:], b.data[:b.Rows*b.Cols])
+	m.Rows, m.Cols = a.Rows, a.Cols+b.Cols
 	return m
 }
 

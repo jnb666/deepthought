@@ -21,7 +21,8 @@ func setup() (data.Dataset, *network.Network) {
 	net := network.NewNetwork(d.MaxSamples)
 	net.InputLayer(d.NumInputs, d.NumOutputs)
 	net.CrossEntropyOutput(d.NumOutputs, network.SigmoidActivation)
-	// for debug - enable gradient checking
-	//net.CheckGradient(10, 0.005)
+	if debug {
+		net.CheckGradient(10, 0.02)
+	}
 	return d, net
 }
