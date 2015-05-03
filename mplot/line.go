@@ -3,9 +3,34 @@ package mplot
 import (
 	"github.com/gonum/plot"
 	"github.com/gonum/plot/plotter"
-	"github.com/gonum/plot/plotutil"
 	"github.com/gonum/plot/vg/draw"
+	"image/color"
 )
+
+var DefaultColors = []color.Color{
+	rgb(255, 255, 0),
+	rgb(0, 255, 255),
+	rgb(255, 105, 180),
+	rgb(0, 255, 0),
+	rgb(255, 0, 255),
+	rgb(0, 0, 255),
+	rgb(255, 0, 0),
+}
+
+func rgb(r, g, b uint8) color.RGBA {
+	return color.RGBA{r, g, b, 255}
+}
+
+// Color returns the ith default color, wrapping
+// if i is less than zero or greater than the max
+// number of colors in the DefaultColors slice.
+func Color(i int) color.Color {
+	n := len(DefaultColors)
+	if i < 0 {
+		return DefaultColors[i%n+n]
+	}
+	return DefaultColors[i%n]
+}
 
 // Line implements the Plotter interface, drawing a line.
 type Line struct {
@@ -45,7 +70,7 @@ func (l *Line) Thumbnail(c *draw.Canvas) {
 func AddLines(plt *Plot, lines ...*Line) {
 	ps := make([]plot.Plotter, len(lines))
 	for i, line := range lines {
-		line.Color = plotutil.Color(i)
+		line.Color = Color(i)
 		ps[i] = line
 		if line.Name != "" {
 			plt.Legend.Add(line.Name, line)

@@ -2,7 +2,6 @@ package m32
 
 import (
 	"fmt"
-	"math/rand"
 	"strings"
 )
 
@@ -154,14 +153,6 @@ func (m *Matrix) String() string {
 	return strings.Join(str, "\n")
 }
 
-// Random method sets the matrix elements to uniform random numbers.
-func (m *Matrix) Random(min, max float32) *Matrix {
-	for i := range m.data[:m.Rows*m.Cols] {
-		m.data[i] = min + (max-min)*rand.Float32()
-	}
-	return m
-}
-
 // Apply method updates each element of a matrix using the given function.
 func (m *Matrix) Apply(a *Matrix, fn func(float32) float32) *Matrix {
 	if len(m.data) < a.Rows*a.Cols {
@@ -170,6 +161,21 @@ func (m *Matrix) Apply(a *Matrix, fn func(float32) float32) *Matrix {
 	m.Rows, m.Cols = a.Rows, a.Cols
 	for i := range m.data[:a.Rows*a.Cols] {
 		m.data[i] = fn(a.data[i])
+	}
+	return m
+}
+
+// Apply2 method updates each element of a matrix with a function of two variables.
+func (m *Matrix) Apply2(a, b *Matrix, fn func(a, y float32) float32) *Matrix {
+	if len(m.data) < a.Rows*a.Cols {
+		panic("m32:Apply2 - output matrix is too small")
+	}
+	if a.Cols != b.Cols || a.Rows != b.Rows {
+		panic("m32:Apply2 - mismatch in no. of rows and columns in input matrices")
+	}
+	m.Rows, m.Cols = a.Rows, a.Cols
+	for i := range m.data[:a.Rows*a.Cols] {
+		m.data[i] = fn(a.data[i], b.data[i])
 	}
 	return m
 }
@@ -252,20 +258,20 @@ func (v *Matrix) MaxCol(m *Matrix) *Matrix {
 }
 
 // SumDiff2 function calculates the sum of the elementwise differences between two matrices.
-func SumDiff2(a, b *Matrix) float32 {
+func SumDiff2(a, b *Matrix) float64 {
 	if a.Rows != b.Rows || a.Cols != b.Cols {
 		panic("m32:SumDiff2 - matrix size mismatch")
 	}
-	sum := float32(0)
+	sum := 0.0
 	for i := range a.data[:a.Rows*a.Cols] {
-		diff := a.data[i] - b.data[i]
+		diff := float64(a.data[i]) - float64(b.data[i])
 		sum += diff * diff
 	}
 	return sum
 }
 
 // CountDiff2 function calculates the number of elements which differ between two matrices by more than epsilon.
-func CountDiff(a, b *Matrix, epsilon float32) float32 {
+func CountDiff(a, b *Matrix, epsilon float32) int {
 	if a.Rows != b.Rows || a.Cols != b.Cols {
 		panic("m32:CountDiff - matrix size mismatch")
 	}
@@ -276,5 +282,14 @@ func CountDiff(a, b *Matrix, epsilon float32) float32 {
 			count++
 		}
 	}
-	return float32(count)
+	return count
+}
+
+// Sum method calculates the sum of the values in the matrix
+func (m *Matrix) Sum() float64 {
+	sum := 0.0
+	for _, val := range m.data[:m.Rows*m.Cols] {
+		sum += float64(val)
+	}
+	return sum
 }

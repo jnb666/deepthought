@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/mplot"
+	"time"
 )
 
 const (
@@ -14,6 +15,7 @@ const (
 // Stats struct has matrix with error on each set over time
 type Stats struct {
 	Epoch     int
+	StartTime time.Time
 	Test      StatsData
 	Train     StatsData
 	Valid     StatsData
@@ -54,12 +56,26 @@ func newStatsData(nepoch int) StatsData {
 	}
 }
 
-// Clear method resets the stats vectors
-func (s *Stats) Clear() {
+// StartRun method resets the stats vectors for this run and starts the timer.
+func (s *Stats) StartRun() {
 	s.Epoch = 1
 	s.Test.clear()
 	s.Train.clear()
 	s.Valid.clear()
+	s.StartTime = time.Now()
+}
+
+// EndRun method updates per run statistics.
+func (s *Stats) EndRun() int {
+	s.NumEpochs.Push(float64(s.Epoch + 1))
+	s.RunTime.Push(time.Since(s.StartTime).Seconds())
+	test := s.Test
+	if test.Error.Len() == 0 {
+		test = s.Train
+	}
+	s.RegError.Push(test.Error.Last())
+	s.ClsError.Push(test.ClassError.Last())
+	return s.Epoch
 }
 
 func (d StatsData) clear() {
@@ -69,7 +85,7 @@ func (d StatsData) clear() {
 
 // String method prints the stats for logging.
 func (s *Stats) String() string {
-	str := fmt.Sprintf("%3d:", s.Epoch)
+	str := fmt.Sprintf("%4d:", s.Epoch)
 	if s.Train.Error.Len() > 0 {
 		str += fmt.Sprint("   train ", s.Train)
 	}
@@ -101,8 +117,8 @@ func (s *Stats) Update(n *Network, d data.Dataset) {
 
 func (s StatsData) update(n *Network, ix int, d *data.Data) {
 	totalError, classError := n.GetError(d.Input, d.Output, d.Classes)
-	s.Error.Set(ix, float64(totalError))
-	s.ClassError.Set(ix, float64(classError))
-	s.AvgError.Set(ix, float64(totalError))
-	s.AvgClassError.Set(ix, float64(classError))
+	s.Error.Set(ix, totalError)
+	s.ClassError.Set(ix, classError)
+	s.AvgError.Set(ix, totalError)
+	s.AvgClassError.Set(ix, classError)
 }

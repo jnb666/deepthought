@@ -10,11 +10,6 @@ func TestNew(t *testing.T) {
 	t.Logf("\n%s\n", m)
 }
 
-func TestRandom(t *testing.T) {
-	m := New(2, 3).Random(-0.5, 0.5)
-	t.Logf("\n%s\n", m)
-}
-
 func TestTranspose(t *testing.T) {
 	m := New(2, 3).Load(RowMajor, 0, 1, 2, 3, 4, 5)
 	m.Transpose()
@@ -80,5 +75,18 @@ func TestMaxCol(t *testing.T) {
 	expect := New(5, 1).Load(RowMajor, 0, 1, 2, 0, 2)
 	if !reflect.DeepEqual(c, expect) {
 		t.Errorf("expected\n%s\n", expect)
+	}
+}
+
+func TestSum(t *testing.T) {
+	m1 := New(2, 2).Load(RowMajor, 1, -2, 2, -4)
+	m2 := New(2, 2).Load(RowMajor, 0, -1, 2, -6)
+	m1.Add(-1, m2, m1)
+	m1.Apply(m1, func(x float32) float32 { return x * x })
+	t.Logf("\n%s\n", m1)
+	sum := m1.Sum()
+	t.Log(sum)
+	if sum != 6 {
+		t.Error("wrong sum - expected 6")
 	}
 }

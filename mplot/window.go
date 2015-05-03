@@ -1,7 +1,6 @@
 package mplot
 
 import (
-	"fmt"
 	"image"
 	"image/color"
 
@@ -41,8 +40,8 @@ func NewWindow(width, height int, title string) (w *Window, err error) {
 	if err = gl.Init(); err != nil {
 		return
 	}
-	version := gl.GoStr(gl.GetString(gl.VERSION))
-	fmt.Println("OpenGL version", version)
+	//version := gl.GoStr(gl.GetString(gl.VERSION))
+	//fmt.Println("OpenGL version", version)
 
 	// setup image and associated texture
 	w.img = image.NewRGBA(image.Rect(0, 0, width, height))

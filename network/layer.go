@@ -1,14 +1,19 @@
 package network
 
 import (
-	//"fmt"
+	"fmt"
 	"github.com/jnb666/deepthought/m32"
 	"math"
 )
 
-func exp(x float32) float32 { return float32(math.Exp(float64(x))) }
-
-func tanh(x float32) float32 { return float32(math.Tanh(float64(x))) }
+// Layer interface type represents one layer in the network.
+type Layer interface {
+	FeedForward(in *m32.Matrix) *m32.Matrix
+	BackProp(err *m32.Matrix, eta float32) *m32.Matrix
+	Weights() *m32.Matrix
+	Gradient() *m32.Matrix
+	Cost(t *m32.Matrix) float64
+}
 
 // Activation interface type represents the activation function and derivative
 type Activation interface {
@@ -42,13 +47,6 @@ func (a tanhFunc) Deriv(m1, m2 *m32.Matrix) {
 	m2.Apply(m1, func(x float32) float32 { y := tanh(x); return 1 - y*y })
 }
 
-// Layer interface type represents one layer in the network.
-type Layer interface {
-	FeedForward(in *m32.Matrix) *m32.Matrix
-	BackProp(err *m32.Matrix, eta float32) *m32.Matrix
-	Weights() *m32.Matrix
-}
-
 type inputLayer struct {
 	bias     *m32.Matrix // column vector of 1s
 	output   *m32.Matrix // return value at each node [samples, nout]
@@ -76,6 +74,14 @@ func (l *inputLayer) Weights() *m32.Matrix {
 	return l.weights
 }
 
+func (l *inputLayer) Gradient() *m32.Matrix {
+	return l.gradient
+}
+
+func (l *inputLayer) Cost(t *m32.Matrix) float64 {
+	panic("no cost for input or hidden layer!")
+}
+
 func (l *inputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 	l.bias.Rows = in.Rows
 	l.values.Join(in, l.bias)
@@ -83,7 +89,8 @@ func (l *inputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
 }
 
 func (l *inputLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
-	l.gradient.Mul(err, l.values).Transpose().Scale(-eta) // [nout, samples] x [samples, nin+1]
+	etas := -eta / float32(l.values.Rows)
+	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]
 	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
 	return nil
 }
@@ -123,36 +130,110 @@ func (l *hiddenLayer) BackProp(err *m32.Matrix, eta float32) *m32.Matrix {
 	l.delta.Mul(l.wnobias, err)                        // [nin, nout] x [nout, samples]
 	l.delta.MulElem(l.delta, l.deriv)                  // [nin, samples]
 	// update weights
-	l.gradient.Mul(err, l.values).Transpose().Scale(-eta) // [nout, samples] x [samples, nin+1]
+	etas := -eta / float32(l.values.Rows)
+	l.gradient.Mul(err, l.values).Transpose().Scale(etas) // [nout, samples] x [samples, nin+1]
 	l.weights.Add(1, l.weights, l.gradient)               // [nin+1, nout]
 	return l.delta
 }
 
 type outputLayer struct {
-	activation Activation
-	values     *m32.Matrix // Z matrix of values at each node [samples, nodes]
-	delta      *m32.Matrix // D matrix of errors at each node [nodes, samples]
+	values *m32.Matrix // Z matrix of values at each node [samples, nodes]
+	delta  *m32.Matrix // D matrix of errors at each node [nodes, samples]
+	temp   *m32.Matrix
 }
 
-// OutputLayer method appends a new output layer to the network.
-func (n *Network) OutputLayer(nodes int, a Activation) {
-	n.Add(&outputLayer{
-		activation: a,
-		values:     m32.New(n.batchSize, nodes),
-		delta:      m32.New(nodes, n.batchSize),
-	})
+func newOutputLayer(batch, nodes int) *outputLayer {
+	return &outputLayer{
+		values: m32.New(batch, nodes),
+		delta:  m32.New(nodes, batch),
+		temp:   m32.New(batch, nodes),
+	}
 }
 
 func (l *outputLayer) Weights() *m32.Matrix {
 	panic("no weights for output layer!")
 }
 
-func (l *outputLayer) FeedForward(in *m32.Matrix) *m32.Matrix {
+func (l *outputLayer) Gradient() *m32.Matrix {
+	panic("no gradient for output layer!")
+}
+
+type quadraticOutput struct {
+	*outputLayer
+	activation Activation
+	deriv      *m32.Matrix // Fp matrix of derivative of activation fn [nin, samples]
+}
+
+// QuadraticOutput method appends a quadratic cost output layer to the network.
+func (n *Network) QuadraticOutput(nodes int, a Activation) {
+	n.Add(&quadraticOutput{
+		outputLayer: newOutputLayer(n.batchSize, nodes),
+		activation:  a,
+		deriv:       m32.New(nodes, n.batchSize),
+	})
+}
+
+func (l *quadraticOutput) FeedForward(in *m32.Matrix) *m32.Matrix {
 	l.activation.Func(in, l.values)
+	l.activation.Deriv(in, l.deriv)
+	l.deriv.Transpose()
 	return l.values
 }
 
-func (l *outputLayer) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
+func (l *quadraticOutput) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
 	l.delta.Add(-1, target, l.values).Transpose()
-	return l.delta
+	return l.delta.MulElem(l.delta, l.deriv)
+}
+
+func (l *quadraticOutput) Cost(target *m32.Matrix) float64 {
+	return 0.5 * m32.SumDiff2(l.values, target) / float64(target.Rows)
+}
+
+type crossEntropy struct {
+	*outputLayer
+}
+
+// CrossEntropyOutput method appends a cross entropy output layer to the network.
+func (n *Network) CrossEntropyOutput(nodes int) {
+	n.Add(&crossEntropy{
+		outputLayer: newOutputLayer(n.batchSize, nodes),
+	})
+}
+
+func (l *crossEntropy) FeedForward(in *m32.Matrix) *m32.Matrix {
+	l.values = in
+	return l.values
+}
+
+func (l *crossEntropy) BackProp(target *m32.Matrix, eta float32) *m32.Matrix {
+	return l.delta.Add(-1, target, l.values).Transpose()
+}
+
+func (l *crossEntropy) Cost(target *m32.Matrix) float64 {
+	fmt.Printf("**values [x]**\n%s\n", l.values)
+	fmt.Printf("**target [y]**\n%s\n", target)
+
+	l.temp.Apply2(l.values, target,
+		func(x, y float32) float32 {
+			z := -y*log(x) - (1-y)*log(1-x)
+			fmt.Printf("%7.4f %7.4f => %g\n", x, y, z)
+			return nanToNum(z)
+		})
+	fmt.Printf("**cost**\n%s\n", l.temp)
+	return l.temp.Sum()
+}
+
+// util functions
+func exp(x float32) float32 { return float32(math.Exp(float64(x))) }
+
+func tanh(x float32) float32 { return float32(math.Tanh(float64(x))) }
+
+func log(x float32) float32 { return float32(math.Log(float64(x))) }
+
+func nanToNum(x float32) float32 {
+	if x != x {
+		return 0
+	} else {
+		return x
+	}
 }

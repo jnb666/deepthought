@@ -6,10 +6,7 @@ import (
 	"testing"
 )
 
-const (
-	weightRange = 0.5
-	maxEpoch    = 200
-)
+const maxEpoch = 200
 
 func createNetwork(batchSize int) (net *Network, s data.Dataset, err error) {
 	if s, err = data.Load("iris", batchSize); err != nil {
@@ -17,7 +14,8 @@ func createNetwork(batchSize int) (net *Network, s data.Dataset, err error) {
 	}
 	net = NewNetwork(s.MaxSamples)
 	net.InputLayer(s.NumInputs, s.NumOutputs)
-	net.OutputLayer(s.NumOutputs, SigmoidActivation)
+	net.QuadraticOutput(s.NumOutputs, SigmoidActivation)
+	net.SetRandomWeights()
 	return
 }
 
@@ -26,7 +24,6 @@ func TestNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	net.SetRandomWeights(weightRange)
 	t.Log(net)
 }
 
@@ -35,7 +32,6 @@ func TestFeedForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	net.SetRandomWeights(weightRange)
 	t.Log(net)
 	t.Logf("input:\n%s\n", d.Test.Input)
 	output := net.FeedForward(d.Test.Input)
@@ -49,11 +45,9 @@ func TestTrain(t *testing.T) {
 	}
 	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
-
-	net.SetRandomWeights(weightRange)
 	t.Log(net)
 	stats := NewStats(maxEpoch, 1)
-	epochs := net.Train(d, 0.01, stats, func(ep int) bool {
+	epochs := net.Train(d, 10, stats, func(ep int) bool {
 		done := ep >= maxEpoch || stats.Valid.Error.Last() < 0.1
 		if ep%10 == 0 || done {
 			t.Log(stats)
