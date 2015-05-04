@@ -2,8 +2,8 @@ package iris
 
 import (
 	"errors"
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
-	"github.com/jnb666/deepthought/m32"
 )
 
 // Data directory
@@ -14,13 +14,19 @@ func init() {
 	data.Register["iris"] = loader{}
 }
 
+type classify struct{}
+
+func (classify) Apply(out, class blas.Matrix) blas.Matrix {
+	return class.MaxCol(out)
+}
+
 type loader struct{}
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
 func (loader) Load(samples int) (s data.Dataset, err error) {
 	var nin, nout int
-	s.OutputToClass = func(out, class *m32.Matrix) { class.MaxCol(out) }
+	s.OutputToClass = classify{}
 	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
