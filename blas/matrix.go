@@ -29,6 +29,7 @@ type Matrix interface {
 	Data(Ordering) []float64
 	Join(a, b Matrix) Matrix
 	Slice(col1, col2 int) Matrix
+	Row(int) Matrix
 	Scale(s float64) Matrix
 	Add(a, b Matrix) Matrix
 	Sub(a, b Matrix) Matrix

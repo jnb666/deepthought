@@ -7,7 +7,7 @@ import (
 )
 
 // Data directory
-var base = "/home/john/go/src/github.com/jnb666/deepthought/data/iris/"
+const base = "/home/john/go/src/github.com/jnb666/deepthought/data/iris/"
 
 // register dataset when module is imported
 func init() {

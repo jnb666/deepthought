@@ -104,6 +104,20 @@ func (m *native32) Slice(col1, col2 int) Matrix {
 	}
 }
 
+// Row method returns a matrix with a copy of the ith row in the matrix.
+func (m *native32) Row(i int) Matrix {
+	r := &native32{
+		rows:   1,
+		cols:   m.cols,
+		data:   make([]float32, m.cols),
+		format: m.format,
+	}
+	for j := range r.data {
+		r.data[j] = m.at(i, j)
+	}
+	return r
+}
+
 // Scale method muliplies each element of the matrix by a scalar.
 func (m *native32) Scale(s float64) Matrix {
 	sc := float32(s)
