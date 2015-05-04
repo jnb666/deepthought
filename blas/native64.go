@@ -132,6 +132,20 @@ func (m *native64) Sub(m1, m2 Matrix) Matrix {
 	return m
 }
 
+// Cmp method compares a and b and returns a matrix with 0 where they are equal else 1.
+func (m *native64) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
+	checkEqualSize("m64:Cmp", m1, m2, m)
+	a, b := m1.(*native64), m2.(*native64)
+	for i := range m.data[:a.rows*a.cols] {
+		if a.data[i] < b.data[i]-epsilon || a.data[i] > b.data[i]+epsilon {
+			m.data[i] = 1
+		} else {
+			m.data[i] = 0
+		}
+	}
+	return m
+}
+
 // MulElem method performs element wise multiplication of the two input matrices and puts the output in m.
 func (m *native64) MulElem(m1, m2 Matrix) Matrix {
 	checkEqualSize("m64:MulElem", m1, m2, m)
@@ -144,7 +158,7 @@ func (m *native64) MulElem(m1, m2 Matrix) Matrix {
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
 // If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *native64) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
+func (m *native64) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
 	a, b := m1.(*native64), m2.(*native64)
 	acols, arows, bcols, brows := a.cols, a.rows, b.cols, b.rows
 	aix := func(row, k int) int { return row + k*arows }
@@ -167,8 +181,15 @@ func (m *native64) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 			for k := 0; k < acols; k++ {
 				sum += a.data[aix(row, k)] * b.data[bix(col, k)]
 			}
-			m.set(row, col, sum)
+			if outTrans {
+				m.data[m.cols*row+col] = sum
+			} else {
+				m.data[m.rows*col+row] = sum
+			}
 		}
+	}
+	if outTrans {
+		m.rows, m.cols = m.cols, m.rows
 	}
 	return m
 }

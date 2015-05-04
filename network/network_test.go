@@ -1,6 +1,7 @@
 package network
 
 import (
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	_ "github.com/jnb666/deepthought/data/iris"
 	"testing"
@@ -8,13 +9,17 @@ import (
 
 const maxEpoch = 200
 
+func init() {
+	blas.Init(blas.Native64)
+}
+
 func createNetwork(batchSize int) (net *Network, s data.Dataset, err error) {
 	if s, err = data.Load("iris", batchSize); err != nil {
 		return
 	}
 	net = NewNetwork(s.MaxSamples)
-	net.InputLayer(s.NumInputs, s.NumOutputs)
-	net.QuadraticOutput(s.NumOutputs, SigmoidActivation)
+	net.AddLayer(s.NumInputs, s.NumOutputs, NilFunc)
+	net.QuadraticOutput(s.NumOutputs, Sigmoid)
 	net.SetRandomWeights()
 	return
 }
@@ -48,7 +53,7 @@ func TestTrain(t *testing.T) {
 	t.Log(net)
 	stats := NewStats(maxEpoch, 1)
 	epochs := net.Train(d, 10, stats, func(s *Stats) bool {
-		done := s.Epoch >= maxEpoch || s.Valid.Error.Last() < 0.1
+		done := s.Epoch >= maxEpoch || s.Valid.Error.Last() < 0.05
 		if s.Epoch%10 == 0 || done {
 			t.Log(s)
 		}

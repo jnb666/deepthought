@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	threshold = 0.1
+	threshold = 0.05
 	maxEpoch  = 200
 	learnRate = 2.0
 )
@@ -19,8 +19,8 @@ func setup() (data.Dataset, *network.Network) {
 	d, err := data.Load("iris", 0)
 	checkErr(err)
 	net := network.NewNetwork(d.MaxSamples)
-	net.InputLayer(d.NumInputs, d.NumOutputs)
-	net.QuadraticOutput(d.NumOutputs, network.SigmoidActivation)
+	net.AddLayer(d.NumInputs, d.NumOutputs, network.NilFunc)
+	net.QuadraticOutput(d.NumOutputs, network.Sigmoid)
 	if debug {
 		net.CheckGradient(25, 0.02)
 	}

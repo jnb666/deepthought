@@ -2,8 +2,8 @@ package network
 
 import (
 	"fmt"
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
-	"github.com/jnb666/deepthought/m32"
 	"math"
 	"math/rand"
 	"strings"
@@ -14,15 +14,33 @@ const (
 	epsilon = 1e-4
 )
 
+// Activation type represents the activation function and derivative
+type Activation struct {
+	Func  blas.UnaryFunction
+	Deriv blas.UnaryFunction
+}
+
+// Standard activation functions
+var (
+	NilFunc = Activation{nil, nil}
+	Sigmoid = Activation{blas.Unary64(sigmoid), blas.Unary64(dsigmoid)}
+	Tanh    = Activation{blas.Unary64(math.Tanh), blas.Unary64(dtanh)}
+)
+
+func sigmoid(x float64) float64 { return 1 / (1 + math.Exp(-x)) }
+
+func dsigmoid(x float64) float64 { y := sigmoid(x); return y * (1 - y) }
+
+func dtanh(x float64) float64 { y := math.Tanh(x); return 1 - y*y }
+
 // Neural network type is an array of layers.
 type Network struct {
 	nodes      []Layer
-	delta      []*m32.Matrix
 	layers     int
 	batchSize  int
-	classes    *m32.Matrix
-	bias       *m32.Matrix
-	out2class  func(a, b *m32.Matrix)
+	classes    blas.Matrix
+	bias       blas.Matrix
+	out2class  blas.UnaryFunction
 	checkEvery int
 	checkMax   float64
 }
@@ -31,15 +49,14 @@ type Network struct {
 func NewNetwork(samples int) *Network {
 	return &Network{
 		batchSize: samples,
-		classes:   m32.New(samples, 1),
-		bias:      m32.New(samples, 1).Load(m32.ColMajor, 1),
+		classes:   blas.New(samples, 1),
+		bias:      blas.New(samples, 1).Load(blas.ColMajor, 1),
 	}
 }
 
 // Add method appends a new layer to the network
 func (n *Network) Add(l Layer) {
 	n.nodes = append(n.nodes, l)
-	n.delta = append(n.delta, nil)
 	n.layers++
 }
 
@@ -58,37 +75,30 @@ func (n *Network) String() string {
 func (n *Network) SetRandomWeights() {
 	for _, layer := range n.nodes[:n.layers-1] {
 		w := layer.Weights()
-		nin, nout := w.Rows-1, w.Cols
-		data := make([]float32, w.Rows*w.Cols)
-		for i := range data[:nin*nout] {
-			data[i] = float32(rand.NormFloat64() / math.Sqrt(float64(nin)))
+		nin, nout := w.Cols(), w.Rows()
+		data := make([]float64, nin*nout)
+		for i := range data[:(nin-1)*nout] {
+			data[i] = rand.NormFloat64() / math.Sqrt(float64(nin-1))
 		}
-		w.Load(m32.RowMajor, data...)
+		w.Load(blas.ColMajor, data...)
 	}
 }
 
 // FeedForward method calculates output from the network given input
-func (n *Network) FeedForward(m *m32.Matrix) *m32.Matrix {
+func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 	for _, layer := range n.nodes {
 		m = layer.FeedForward(m)
 	}
 	return m
 }
 
-// BackProp method performs backpropagation of the errors for each layer and updates the weights
-func (n *Network) BackProp(target *m32.Matrix, eta float32) {
-	n.delta[n.layers-1] = n.nodes[n.layers-1].BackProp(target, eta)
-	for i := n.layers - 2; i >= 0; i-- {
-		n.delta[i] = n.nodes[i].BackProp(n.delta[i+1], eta)
-	}
-}
-
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
-func (n *Network) GetError(input, target, targetClass *m32.Matrix) (totalError, classError float64) {
+func (n *Network) GetError(input, target, targetClass blas.Matrix) (totalError, classError float64) {
 	output := n.FeedForward(input)
-	totalError = float64(m32.SumDiff2(target, output)) / float64(input.Rows*output.Cols)
-	n.out2class(output, n.classes)
-	classError = float64(m32.CountDiff(n.classes, targetClass, epsilon)) / float64(input.Rows)
+	totalError = n.nodes[n.layers-1].Cost(target) / float64(output.Cols())
+	n.out2class.Apply(output, n.classes)
+	n.classes.Cmp(n.classes, targetClass, epsilon)
+	classError = n.classes.Sum() / float64(output.Rows())
 	return
 }
 
@@ -98,54 +108,57 @@ func (n *Network) CheckGradient(nepochs int, maxError float64) {
 	n.checkMax = maxError
 }
 
-func (n *Network) doCheck(input, target *m32.Matrix) (ok bool) {
+func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 	output := n.nodes[n.layers-1]
 	ok = true
 	for i, layer := range n.nodes[:n.layers-1] {
 		w := layer.Weights()
-		weight := w.Data()
-		grads := layer.Gradient().Data()
-		diffs := make([]float32, w.Rows*w.Cols)
-		projs := make([]float32, w.Rows*w.Cols)
+		weight := w.Data(blas.ColMajor)
+		wsave := append([]float64{}, weight...)
+		grads := layer.Gradient().Data(blas.ColMajor)
+		diffs := make([]float64, w.Size())
+		projs := make([]float64, w.Size())
 		maxDiff := 0.0
 		for i, val := range weight {
 			weight[i] = val - epsilon
+			w.Load(blas.ColMajor, weight...)
 			n.FeedForward(input)
 			cost1 := output.Cost(target)
 			weight[i] = val + epsilon
+			w.Load(blas.ColMajor, weight...)
 			n.FeedForward(input)
 			cost2 := output.Cost(target)
-			g1 := float64(grads[i])
-			g2 := -(cost2 - cost1) / (2.0 * epsilon)
-			dg := math.Abs(g1 - g2)
-			maxDiff = math.Max(maxDiff, dg)
-			projs[i] = float32(g2)
-			diffs[i] = float32(dg)
-			weight[i] = val
+			projs[i] = (cost1 - cost2) / (2 * epsilon)
+			diffs[i] = grads[i] - projs[i]
+			maxDiff = math.Max(maxDiff, math.Abs(diffs[i]))
 		}
 		fmt.Printf("LAYER %d : max diff=%.8f\n", i, maxDiff)
 		if maxDiff > n.checkMax {
 			layer.Gradient().SetFormat("%9.6f")
-			proj := m32.New(w.Rows, w.Cols).Load(m32.ColMajor, projs...)
+			proj := blas.New(w.Rows(), w.Cols()).Load(blas.ColMajor, projs...)
 			proj.SetFormat("%9.6f")
-			diff := m32.New(w.Rows, w.Cols).Load(m32.ColMajor, diffs...)
+			diff := blas.New(w.Rows(), w.Cols()).Load(blas.ColMajor, diffs...)
 			diff.SetFormat("%9.6f")
 			fmt.Printf("*** WARNING *** GRADIENTS LOOK WRONG!\n%s\n\n%s\n\n%s\n",
 				layer.Gradient(), proj, diff)
 			ok = false
 		}
+		w.Load(blas.ColMajor, wsave...)
 	}
 	return
 }
 
 // Train method trains the network on the given training set and updates the stats.
 // stop callback function returns true if we should terminate the run.
-func (n *Network) Train(d data.Dataset, learnRate float32, s *Stats, stop func(*Stats) bool) int {
+func (n *Network) Train(d data.Dataset, learnRate float64, s *Stats, stop func(*Stats) bool) int {
 	n.out2class = d.OutputToClass
 	s.StartRun()
 	for {
 		n.FeedForward(d.Train.Input)
-		n.BackProp(d.Train.Output, learnRate)
+		delta := d.Train.Output
+		for i := n.layers - 1; i >= 0; i-- {
+			delta = n.nodes[i].BackProp(delta, learnRate)
+		}
 		if n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
 			n.doCheck(d.Train.Input, d.Train.Output)
 		}

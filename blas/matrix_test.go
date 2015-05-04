@@ -6,8 +6,8 @@ import (
 )
 
 func init() {
-	Init(Native32)
-	//Init(Native64)
+	//Init(Native32)
+	Init(Native64)
 }
 
 func TestLoad(t *testing.T) {
@@ -70,17 +70,17 @@ func TestMul(t *testing.T) {
 	b := New(3, 2).Load(RowMajor, 7, 8, 9, 10, 11, 12)
 	b.SetFormat("%3.0f")
 	t.Logf("b\n%s\n", b)
-	m := New(2, 2).Mul(a, b, false, false)
+	m := New(2, 2).Mul(a, b, false, false, false)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
 	expect := []float64{58, 64, 139, 154}
-	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
+	if m.Rows() != 2 || m.Cols() != 2 || !reflect.DeepEqual(m.Data(RowMajor), expect) {
 		t.Error("norm: expected", expect)
 	}
 	// check if a is transposed
 	a.Load(ColMajor, 1, 2, 3, 4, 5, 6).Reshape(3, 2)
 	t.Logf("a\n%s\n", a)
-	m.Mul(a, b, true, false)
+	m.Mul(a, b, true, false, false)
 	t.Logf("m\n%s\n", m)
 	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
 		t.Error("atrans: expected", expect)
@@ -88,10 +88,20 @@ func TestMul(t *testing.T) {
 	// check if b is transposed
 	b.Load(ColMajor, 7, 8, 9, 10, 11, 12).Reshape(2, 3)
 	t.Logf("b\n%s\n", b)
-	m.Mul(a, b, true, true)
+	m.Mul(a, b, true, true, false)
 	t.Logf("m\n%s\n", m)
 	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
-		t.Error("atrans: expected", expect)
+		t.Error("abtrans: expected", expect)
+	}
+	// check out transposed
+	a1 := New(1, 3).Load(RowMajor, 1, 2, 3)
+	a1.SetFormat("%3.0f")
+	t.Logf("a\n%s\n", a1)
+	t.Logf("b\n%s\n", b)
+	m.Mul(a1, b, false, true, true)
+	t.Logf("m\n%s\n", m)
+	if m.Rows() != 2 || m.Cols() != 1 || !reflect.DeepEqual(m.Data(ColMajor), expect[:2]) {
+		t.Error("outtrans: expected", expect[:2])
 	}
 }
 

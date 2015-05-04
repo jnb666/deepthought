@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/mplot"
 	"github.com/jnb666/deepthought/network"
@@ -58,7 +59,7 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 		if debug {
 			fmt.Println(net)
 		}
-		epoch := net.Train(data, float32(learnRate), s, stopCriteria)
+		epoch := net.Train(data, learnRate, s, stopCriteria)
 		status := "**SUCCESS**"
 		if epoch >= maxEpoch-1 {
 			status = "**FAILED **"
@@ -81,7 +82,7 @@ func createPlots(stats *network.Stats, d data.Dataset) (rows, cols int, plots []
 	p1.Title.Text = fmt.Sprintf("Learning rate = %g", learnRate)
 	pError, pClass := stats.ErrorPlots(d)
 	p1.X.Label.Text = "epoch"
-	p1.Y.Label.Text = "average error"
+	p1.Y.Label.Text = "cost function"
 	mplot.AddLines(p1, pError...)
 	p2 := mplot.New()
 	p2.X.Label.Text = "epoch"
@@ -115,6 +116,7 @@ func main() {
 	if !batch {
 		runtime.LockOSThread()
 	}
+	blas.Init(blas.Native64)
 
 	// setup the network
 	network.SeedRandom(seed)

@@ -15,13 +15,13 @@ var (
 
 // load the data and setup the network with one hidden layer
 func setup() (data.Dataset, *network.Network) {
-	fmt.Printf("XOR DATASET: [2,2,1] layers with cross entropy cost and tanh activation, eta=%.g\n", learnRate)
+	fmt.Printf("XOR DATASET: [2,2,1] layers with cross entropy cost and tanh activation, eta=%.g\n\n", learnRate)
 	d, err := data.Load("xor", 0)
 	checkErr(err)
 	net := network.NewNetwork(d.MaxSamples)
-	net.InputLayer(2, 2)
-	net.HiddenLayer(2, 1, network.TanhActivation)
-	net.QuadraticOutput(1, network.TanhActivation)
+	net.AddLayer(2, 2, network.NilFunc)
+	net.AddLayer(2, 1, network.Tanh)
+	net.QuadraticOutput(1, network.Tanh)
 	if debug {
 		net.CheckGradient(20, 0.02)
 	}
