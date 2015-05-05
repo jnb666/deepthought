@@ -16,127 +16,169 @@ const (
 	testImages  = "t10k-images-idx3-ubyte"
 	testLabels  = "t10k-labels-idx1-ubyte"
 	numOutputs  = 10
+	trainMax    = 50000
+	testMax     = 10000
 )
+
+var Debug = false
 
 // register dataset when module is imported
 func init() {
 	data.Register["mnist"] = loader{}
 }
 
+// classification function
+type classify struct{}
+
+func (classify) Apply(out, class blas.Matrix) blas.Matrix { return class.MaxCol(out) }
+
 type loader struct{}
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-// TODO implement batch loading
-func (loader) Load(samples, batchSize int) (s *data.Dataset, err error) {
-	s = new(data.Dataset)
+func (loader) Load(samples, batchSize int) (*data.Dataset, error) {
+	s := new(data.Dataset)
 	s.OutputToClass = classify{}
-	// test set
-	images, size := readData(testLabels, testImages, 0, -1, samples)
-	s.Test, s.NumInputs, s.NumOutputs = parseData(images, size)
-	s.MaxSamples = s.Test.NumSamples
+	if batchSize == 0 {
+		batchSize = testMax
+	}
+
 	// training set
-	images, _ = readData(trainLabels, trainImages, 0, 50000, samples)
-	s.Train, _, _ = parseData(images, size)
-	s.MaxSamples = max(s.MaxSamples, s.Train.NumSamples)
+	r := newReader(trainLabels, trainImages)
+	s.Train = r.read(samples, batchSize, trainMax)
+	s.NumInputs = int(r.image.Width * r.image.Height)
+	s.NumOutputs = numOutputs
+	s.MaxSamples = s.Train.NumSamples
+
 	// validation set
-	images, _ = readData(trainLabels, trainImages, 50000, -1, samples)
-	s.Valid, _, _ = parseData(images, size)
-	s.MaxSamples = max(s.MaxSamples, s.Valid.NumSamples)
+	r.seek(trainMax)
+	s.Valid = r.read(samples, batchSize, testMax)
+	r.close()
+	if r.err != nil {
+		return s, r.err
+	}
+
+	// test set
+	r = newReader(testLabels, testImages)
+	s.Test = r.read(samples, batchSize, testMax)
+	r.close()
+	return s, r.err
+}
+
+// imageReader to read from binary file of images and labels
+type imageReader struct {
+	flab  *os.File
+	fimg  *os.File
+	label struct{ Magic, Num uint32 }
+	image struct{ Magic, Num, Width, Height uint32 }
+	err   error
+}
+
+// open files and read header info
+func newReader(labelFile, imageFile string) (r *imageReader) {
+	r = new(imageReader)
+	if r.flab, r.err = os.Open(base + labelFile); r.err != nil {
+		return
+	}
+	if r.err = binary.Read(r.flab, binary.BigEndian, &r.label); r.err != nil {
+		return
+	}
+	if Debug {
+		fmt.Printf("open %s : %+v\n", labelFile, r.label)
+	}
+	if r.fimg, r.err = os.Open(base + imageFile); r.err != nil {
+		return
+	}
+	if r.err = binary.Read(r.fimg, binary.BigEndian, &r.image); r.err != nil {
+		return
+	}
+	if Debug {
+		fmt.Printf("open %s : %+v\n", imageFile, r.image)
+	}
 	return
 }
 
-type classify struct{}
-
-func (classify) Apply(out, class blas.Matrix) blas.Matrix {
-	return class.MaxCol(out)
+// close the files
+func (r *imageReader) close() {
+	if r.err == nil {
+		r.flab.Close()
+		r.fimg.Close()
+	}
 }
 
-type image struct {
-	data  []byte
-	label byte
+// seek to nth image in the file
+func (r *imageReader) seek(n int) {
+	if r.err != nil {
+		return
+	}
+	offset := int64(n) + 8
+	if _, r.err = r.flab.Seek(offset, 0); r.err != nil {
+		return
+	}
+	offset = int64(n)*int64(r.image.Width*r.image.Height) + 16
+	if _, r.err = r.fimg.Seek(offset, 0); r.err != nil {
+		return
+	}
+	if Debug {
+		fmt.Printf("seek to image %d\n", n)
+	}
 }
 
-// load data from file
-func readData(labelFile, imageFile string, from, to, samples int) ([]image, int) {
-	var f *os.File
-	var err error
-	// labels
-	var labelDef struct{ Magic, Num int32 }
-	if f, err = os.Open(base + labelFile); err != nil {
-		panic(fmt.Sprintf("error reading labels: %s", err))
+// read an entire dataset
+func (r *imageReader) read(samples, batchSize, maxImages int) *data.Data {
+	d := new(data.Data)
+	if samples == 0 || samples > maxImages {
+		samples = maxImages
 	}
-	binary.Read(f, binary.BigEndian, &labelDef)
-	maxSamples := int(labelDef.Num) - from
-	if to > 0 && to-from < maxSamples {
-		maxSamples = to - from
+	if batchSize > samples {
+		batchSize = samples
 	}
-	if samples == 0 || samples > maxSamples {
-		samples = maxSamples
-	}
-	fmt.Printf("read %d images from %s starting from %d\n", samples, imageFile, from)
-	labels := make([]byte, samples)
-	if from > 0 {
-		fmt.Println("seek to image", from)
-		if _, err = f.Seek(int64(from), 1); err != nil {
-			panic(fmt.Sprintf("error in seek on %s: %s", labelFile, err))
+	nbatch := samples / batchSize
+	d.Input = make([]blas.Matrix, nbatch)
+	d.Output = make([]blas.Matrix, nbatch)
+	d.Classes = make([]blas.Matrix, nbatch)
+	for i := range d.Input {
+		if r.err != nil {
+			return nil
 		}
+		d.Input[i], d.Output[i], d.Classes[i] = r.readBatch(batchSize)
 	}
-	f.Read(labels)
-	f.Close()
-	// images
-	var imageDef struct{ Magic, Num, Width, Height int32 }
-	if f, err = os.Open(base + imageFile); err != nil {
-		panic(fmt.Sprintf("error reading images: %s", err))
+	if Debug {
+		fmt.Printf("read %d batches of %d images\n", nbatch, batchSize)
 	}
-	binary.Read(f, binary.BigEndian, &imageDef)
-	images := make([]image, samples)
-	size := imageDef.Width * imageDef.Height
-	if from > 0 {
-		if _, err = f.Seek(int64(from)*int64(size), 1); err != nil {
-			panic(fmt.Sprintf("error in seek on %s: %s", labelFile, err))
-		}
-	}
-	for i := 0; i < samples; i++ {
-		images[i].label = labels[i]
-		images[i].data = make([]byte, size)
-		f.Read(images[i].data)
-	}
-	f.Close()
-	return images, int(imageDef.Width)
+	d.NumSamples = nbatch * batchSize
+	return d
 }
 
-// convert data set to neural net inputs and outputs
-func parseData(img []image, size int) (d *data.Data, nin, nout int) {
-	d = new(data.Data)
-	d.NumSamples = len(img)
-	nin = len(img[0].data)
-	nout = numOutputs
-	in := make([]float64, nin*d.NumSamples)
-	out := make([]float64, nout*d.NumSamples)
-	class := make([]float64, d.NumSamples)
-	for i, image := range img {
-		for iy := 0; iy < size; iy++ {
-			for ix := 0; ix < size; ix++ {
-				in[i*nin+iy*size+size-ix-1] = float64(image.data[ix*size+iy]) / 255
+// read one batch of n images and associated labels
+func (r *imageReader) readBatch(n int) (in, out, class blas.Matrix) {
+	labels := make([]byte, n)
+	if _, r.err = r.flab.Read(labels); r.err != nil {
+		return
+	}
+	size := int(r.image.Width) // assume square
+	image := make([]byte, size*size)
+	idata := make([]float64, n*size*size)
+	odata := make([]float64, n*numOutputs)
+	cdata := make([]float64, n)
+	for i := 0; i < n; i++ {
+		if _, r.err = r.fimg.Read(image); r.err != nil {
+			return
+		}
+		for y := 0; y < size; y++ {
+			for x := 0; x < size; x++ {
+				idata[i*size*size+y*size+size-x-1] = float64(image[x*size+y]) / 255
 			}
 		}
-		for j := 0; j < nout; j++ {
-			if int(image.label) == j {
-				out[i*nout+j] = 1
+		for j := 0; j < numOutputs; j++ {
+			if int(labels[i]) == j {
+				odata[i*numOutputs+j] = 1
 			}
-			class[i] = float64(image.label)
+			cdata[i] = float64(labels[i])
 		}
 	}
-	d.Input = []blas.Matrix{blas.New(d.NumSamples, nin).Load(blas.RowMajor, in...)}
-	d.Output = []blas.Matrix{blas.New(d.NumSamples, nout).Load(blas.RowMajor, out...)}
-	d.Classes = []blas.Matrix{blas.New(d.NumSamples, 1).Load(blas.RowMajor, class...)}
+	in = blas.New(n, size*size).Load(blas.RowMajor, idata...)
+	out = blas.New(n, numOutputs).Load(blas.RowMajor, odata...)
+	class = blas.New(n, 1).Load(blas.RowMajor, cdata...)
 	return
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

@@ -21,7 +21,7 @@ const (
 func main() {
 	runtime.LockOSThread()
 	blas.Init(blas.Native64)
-	d, err := data.Load("mnist", 1000, 0)
+	d, err := data.Load("mnist", 10000, 0)
 	checkErr(err)
 	fmt.Printf("loaded digits: %d training, %d test, %d validation\n",
 		d.Train.NumSamples, d.Test.NumSamples, d.Valid.NumSamples)

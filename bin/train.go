@@ -22,7 +22,6 @@ var (
 	logEvery  = 0
 	trainRuns = 20
 	seed      = int64(1)
-	batchSize = 0
 )
 
 // exit if fatal error

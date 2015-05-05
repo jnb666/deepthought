@@ -4,6 +4,7 @@ import (
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	_ "github.com/jnb666/deepthought/data/iris"
+	_ "github.com/jnb666/deepthought/data/mnist"
 	_ "github.com/jnb666/deepthought/data/xor"
 	"testing"
 )
@@ -30,10 +31,14 @@ func TestXor(t *testing.T) {
 	t.Log(s.Train)
 }
 
-func TestBatch(t *testing.T) {
-	s := load(t, "iris", 0, 10)
-	t.Log(s.Train)
-	if len(s.Train.Input) != 7 {
-		t.Error("incorrect no. of batches!")
+func TestMNIST(t *testing.T) {
+	s := load(t, "mnist", 0, 100)
+	//t.Log(s.Train)
+	nbatch := len(s.Train.Input)
+	if nbatch != 500 {
+		t.Errorf("incorrect no. of batches: got %d", nbatch)
+	}
+	if s.Train.NumSamples != nbatch*100 {
+		t.Errorf("incorrect number of samples: got %d", s.Train.NumSamples)
 	}
 }

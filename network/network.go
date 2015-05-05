@@ -101,7 +101,11 @@ func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
 	// calc average over batches
 	totalError := new(mplot.RunningStat)
 	classError := new(mplot.RunningStat)
+	nbatch := len(d.Input)
 	for i, input := range d.Input {
+		if nbatch > 1 {
+			fmt.Printf("\rtest batch: %d/%d        ", i+1, nbatch)
+		}
 		// get cost
 		output := n.FeedForward(input)
 		totalError.Push(costFn(d.Output[i]) / outputs)
@@ -109,6 +113,9 @@ func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
 		n.out2class.Apply(output, n.classes)
 		n.classes.Cmp(n.classes, d.Classes[i], epsilon)
 		classError.Push(n.classes.Sum() / batchSize)
+	}
+	if nbatch > 1 {
+		fmt.Print("\r")
 	}
 	return totalError.Mean, classError.Mean
 }
@@ -177,16 +184,14 @@ func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(
 	n.out2class = d.OutputToClass
 	s.StartRun()
 	for {
+		s.StartEpoch = time.Now()
 		// train over each batch of data
 		nbatch := len(d.Train.Input)
 		for i, input := range d.Train.Input {
-			n.TrainStep(input, d.Train.Output[i], learnRate, s)
 			if nbatch > 1 {
-				fmt.Printf("\repoch: %d  batch: %d/%d", s.Epoch, i+1, nbatch)
+				fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
 			}
-		}
-		if nbatch > 1 {
-			fmt.Println()
+			n.TrainStep(input, d.Train.Output[i], learnRate, s)
 		}
 		// update stats and check stopping condition
 		s.Update(n, d)

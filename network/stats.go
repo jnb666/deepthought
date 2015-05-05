@@ -14,15 +14,16 @@ const (
 
 // Stats struct has matrix with error on each set over time
 type Stats struct {
-	Epoch     int
-	StartTime time.Time
-	Test      StatsData
-	Train     StatsData
-	Valid     StatsData
-	NumEpochs mplot.StatsVector
-	RunTime   mplot.StatsVector
-	RegError  mplot.StatsVector
-	ClsError  mplot.StatsVector
+	Epoch      int
+	StartTime  time.Time
+	StartEpoch time.Time
+	Test       StatsData
+	Train      StatsData
+	Valid      StatsData
+	NumEpochs  mplot.StatsVector
+	RunTime    mplot.StatsVector
+	RegError   mplot.StatsVector
+	ClsError   mplot.StatsVector
 }
 
 // StatsData stores vectors with the errors and classification errors
@@ -95,6 +96,7 @@ func (s *Stats) String() string {
 	if s.Test.Error.Len() > 0 {
 		str += fmt.Sprint("   test ", s.Test)
 	}
+	str += fmt.Sprint("   time ", time.Since(s.StartEpoch))
 	return str
 }
 

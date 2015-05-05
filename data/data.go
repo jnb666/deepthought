@@ -23,7 +23,6 @@ type Dataset struct {
 	NumInputs     int
 	NumOutputs    int
 	MaxSamples    int
-	BatchSize     int
 }
 
 // Data type represents a set of test or training data.
