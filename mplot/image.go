@@ -27,9 +27,9 @@ func (img *Image) Plot(c draw.Canvas, plt *plot.Plot) {
 	pts := make([]draw.Point, 4)
 	var x0, y0, x1, y1 vg.Length
 	for iy := 0; iy < img.Rows(); iy++ {
-		y0, y1 = trY(float64(iy)), trY(float64(iy+1))
+		y0, y1 = trY(float64(iy)), trY(float64(iy+1))+1
 		for ix := 0; ix < img.Cols(); ix++ {
-			x0, x1 = trX(float64(ix)), trX(float64(ix+1))
+			x0, x1 = trX(float64(ix)), trX(float64(ix+1))+1
 			shade := uint8(255 * data[j])
 			colour := color.RGBA{shade, shade, shade, 255}
 			pts[0].X, pts[0].Y = x0, y0

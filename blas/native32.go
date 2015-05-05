@@ -112,8 +112,8 @@ func (m *native32) Row(i int) Matrix {
 		data:   make([]float32, m.cols),
 		format: m.format,
 	}
-	for j := range r.data {
-		r.data[j] = m.at(i, j)
+	for j := 0; j < m.cols; j++ {
+		r.set(0, j, m.at(i, j))
 	}
 	return r
 }
@@ -208,32 +208,6 @@ func (m *native32) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
 		m.rows, m.cols = m.cols, m.rows
 	}
 	return m
-}
-
-// Unary32 represents a float32 function of one variable
-type Unary32 func(float32) float32
-
-// Apply method applies a function to each element in a matrix
-func (f Unary32) Apply(in, out Matrix) Matrix {
-	a, b := in.(*native32), out.(*native32)
-	b.Reshape(a.rows, a.cols)
-	for i, val := range a.data[:a.rows*a.cols] {
-		b.data[i] = f(val)
-	}
-	return b
-}
-
-// Binary32 represents a float32 function of two variables
-type Binary32 func(a, b float32) float32
-
-// Apply method applies a function to each element in a matrix
-func (f Binary32) Apply(m1, m2, out Matrix) Matrix {
-	a, b, c := m1.(*native32), m2.(*native32), out.(*native32)
-	checkEqualSize("m32:Apply", a, b, c)
-	for i := range a.data[:a.rows*a.cols] {
-		c.data[i] = f(a.data[i], b.data[i])
-	}
-	return c
 }
 
 // Sum method calculates the sum of the values in the matrix

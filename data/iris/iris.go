@@ -24,16 +24,17 @@ type loader struct{}
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-func (loader) Load(samples int) (s data.Dataset, err error) {
+func (loader) Load(samples, batch int) (s *data.Dataset, err error) {
 	var nin, nout int
+	s = new(data.Dataset)
 	s.OutputToClass = classify{}
-	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples, s.OutputToClass)
+	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples, batch, s.OutputToClass)
 	if err != nil {
 		return
 	}
 	s.MaxSamples = s.Test.NumSamples
 
-	s.Train, nin, nout, err = data.LoadFile(base+"iris_training.dat", samples, s.OutputToClass)
+	s.Train, nin, nout, err = data.LoadFile(base+"iris_training.dat", samples, batch, s.OutputToClass)
 	if err != nil {
 		return
 	}
@@ -44,7 +45,7 @@ func (loader) Load(samples int) (s data.Dataset, err error) {
 		s.MaxSamples = s.Train.NumSamples
 	}
 
-	s.Valid, nin, nout, err = data.LoadFile(base+"iris_validation.dat", samples, s.OutputToClass)
+	s.Valid, nin, nout, err = data.LoadFile(base+"iris_validation.dat", samples, batch, s.OutputToClass)
 	if err != nil {
 		return
 	}

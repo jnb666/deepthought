@@ -1,6 +1,7 @@
 package network
 
 import (
+	//"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"math"
 )

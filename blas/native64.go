@@ -104,7 +104,7 @@ func (m *native64) Slice(col1, col2 int) Matrix {
 	}
 }
 
-// Row method returns a matrix with a copy of the ith row in the matrix.
+// Row method returns a matrix with a copy of the iths row in the matrix.
 func (m *native64) Row(i int) Matrix {
 	r := &native64{
 		rows:   1,
@@ -112,8 +112,8 @@ func (m *native64) Row(i int) Matrix {
 		data:   make([]float64, m.cols),
 		format: m.format,
 	}
-	for j := range r.data {
-		r.data[j] = m.at(i, j)
+	for j := 0; j < m.cols; j++ {
+		r.set(0, j, m.at(i, j))
 	}
 	return r
 }
@@ -206,32 +206,6 @@ func (m *native64) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
 		m.rows, m.cols = m.cols, m.rows
 	}
 	return m
-}
-
-// Unary64 represents a float64 function of one variable
-type Unary64 func(float64) float64
-
-// Apply method applies a function to each element in a matrix
-func (f Unary64) Apply(in, out Matrix) Matrix {
-	a, b := in.(*native64), out.(*native64)
-	b.Reshape(a.rows, a.cols)
-	for i, val := range a.data[:a.rows*a.cols] {
-		b.data[i] = f(val)
-	}
-	return b
-}
-
-// Binary64 represents a float64 function of two variables
-type Binary64 func(a, b float64) float64
-
-// Apply method applies a function to each element in a matrix
-func (f Binary64) Apply(m1, m2, out Matrix) Matrix {
-	a, b, c := m1.(*native64), m2.(*native64), out.(*native64)
-	checkEqualSize("m64:Apply", a, b, c)
-	for i := range a.data[:a.rows*a.cols] {
-		c.data[i] = f(a.data[i], b.data[i])
-	}
-	return c
 }
 
 // Sum method calculates the sum of the values in the matrix

@@ -103,7 +103,7 @@ func (d StatsData) String() string {
 }
 
 // Update method calculates the error and updates the stats.
-func (s *Stats) Update(n *Network, d data.Dataset) {
+func (s *Stats) Update(n *Network, d *data.Dataset) {
 	if d.Train != nil {
 		s.Train.update(n, s.Epoch-1, d.Train)
 	}
@@ -116,7 +116,7 @@ func (s *Stats) Update(n *Network, d data.Dataset) {
 }
 
 func (s StatsData) update(n *Network, ix int, d *data.Data) {
-	totalError, classError := n.GetError(d.Input, d.Output, d.Classes)
+	totalError, classError := n.GetError(d)
 	s.Error.Set(ix, totalError)
 	s.ClassError.Set(ix, classError)
 	s.AvgError.Set(ix, totalError)
@@ -124,7 +124,7 @@ func (s StatsData) update(n *Network, ix int, d *data.Data) {
 }
 
 // ErrorPlots method returns a line plots for each error curve
-func (s *Stats) ErrorPlots(d data.Dataset) (p1, p2 []*mplot.Line) {
+func (s *Stats) ErrorPlots(d *data.Dataset) (p1, p2 []*mplot.Line) {
 	if d.Train != nil {
 		p1 = append(p1, mplot.NewLine(s.Train.Error, "training"))
 		p2 = append(p2, mplot.NewLine(s.Train.ClassError, "training"))

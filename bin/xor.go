@@ -14,10 +14,13 @@ var (
 )
 
 // load the data and setup the network with one hidden layer
-func setup() (data.Dataset, *network.Network) {
+func setup() (*data.Dataset, *network.Network) {
 	fmt.Printf("XOR DATASET: [2,2,1] layers with quadratic cost and tanh activation, eta=%.g\n\n", learnRate)
-	d, err := data.Load("xor", 0)
+	d, err := data.Load("xor", 0, 0)
 	checkErr(err)
+	if debug {
+		fmt.Println(d.Train)
+	}
 	net := network.NewNetwork(d.MaxSamples)
 	net.AddLayer(2, 2, network.NilFunc)
 	net.AddLayer(2, 1, network.Tanh)

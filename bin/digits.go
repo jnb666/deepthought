@@ -13,27 +13,25 @@ import (
 const (
 	width   = 800
 	height  = 800
-	rows    = 4
-	cols    = 4
+	rows    = 6
+	cols    = 6
 	imgSize = 28
 )
 
 func main() {
 	runtime.LockOSThread()
 	blas.Init(blas.Native64)
-	d, err := data.Load("mnist", 0)
+	d, err := data.Load("mnist", 1000, 0)
 	checkErr(err)
 	fmt.Printf("loaded digits: %d training, %d test, %d validation\n",
 		d.Train.NumSamples, d.Test.NumSamples, d.Valid.NumSamples)
+	dataset := d.Test
 
 	window, err := mplot.NewWindow(width, height, "digits")
 	checkErr(err)
-
-	dataset := d.Valid
-
 	plt := make([]*mplot.Plot, rows*cols)
 	mat := make([]blas.Matrix, rows*cols)
-	labels := dataset.Classes.Data(blas.RowMajor)
+	labels := dataset.Classes[0].Data(blas.RowMajor)
 	for i := range plt {
 		mat[i] = blas.New(imgSize, imgSize)
 		plt[i] = mplot.New()
@@ -49,7 +47,7 @@ func main() {
 		for {
 			for i := range plt {
 				ix := page*rows*cols + i
-				data := dataset.Input.Row(ix).Data(blas.ColMajor)
+				data := dataset.Input[0].Row(ix).Data(blas.ColMajor)
 				mat[i].Load(blas.ColMajor, data...)
 				plt[i].Title.Text = fmt.Sprintf("test %d: %.0f", ix, labels[ix])
 			}
@@ -60,7 +58,7 @@ func main() {
 	}()
 
 	for !window.ShouldClose() {
-		window.Draw(4, 4, plt...)
+		window.Draw(rows, cols, plt...)
 	}
 }
 

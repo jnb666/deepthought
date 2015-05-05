@@ -22,6 +22,7 @@ var (
 	logEvery  = 0
 	trainRuns = 20
 	seed      = int64(1)
+	batchSize = 0
 )
 
 // exit if fatal error
@@ -48,7 +49,7 @@ func stopCriteria(s *network.Stats) bool {
 }
 
 // train the network
-func train(net *network.Network, data data.Dataset, s *network.Stats) {
+func train(net *network.Network, data *data.Dataset, s *network.Stats) {
 	failed := 0
 	for run := 0; run < trainRuns; run++ {
 		if !batch && run > 0 {
@@ -77,7 +78,7 @@ func train(net *network.Network, data data.Dataset, s *network.Stats) {
 }
 
 // setup the plots
-func createPlots(stats *network.Stats, d data.Dataset) (rows, cols int, plots []*mplot.Plot) {
+func createPlots(stats *network.Stats, d *data.Dataset) (rows, cols int, plots []*mplot.Plot) {
 	p1 := mplot.New()
 	p1.Title.Text = fmt.Sprintf("Learning rate = %g", learnRate)
 	pError, pClass := stats.ErrorPlots(d)
@@ -116,7 +117,7 @@ func main() {
 	if !batch {
 		runtime.LockOSThread()
 	}
-	blas.Init(blas.Native64)
+	blas.Init(blas.Native32)
 
 	// setup the network
 	network.SeedRandom(seed)

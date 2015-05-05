@@ -109,18 +109,8 @@ func TestApply(t *testing.T) {
 	m := New(3, 3).Load(RowMajor, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
-	var fu UnaryFunction
-	var fb BinaryFunction
-	switch Implementation() {
-	case Native32:
-		fu = Unary32(func(x float32) float32 { return x * x })
-		fb = Binary32(func(x, y float32) float32 { return x + y*y })
-	case Native64:
-		fu = Unary64(func(x float64) float64 { return x * x })
-		fb = Binary64(func(x, y float64) float64 { return x + y*y })
-	default:
-		t.Fatal("unknown implemntation!")
-	}
+	fu := Unary64(func(x float64) float64 { return x * x })
+	fb := Binary64(func(x, y float64) float64 { return x + y*y })
 	fu.Apply(m, m)
 	t.Logf("m\n%s\n", m)
 	expect := []float64{1, 4, 9, 16, 25, 36, 49, 64, 81}

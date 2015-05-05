@@ -10,11 +10,11 @@ import (
 const maxEpoch = 200
 
 func init() {
-	blas.Init(blas.Native64)
+	blas.Init(blas.Native32)
 }
 
-func createNetwork(batchSize int) (net *Network, s data.Dataset, err error) {
-	if s, err = data.Load("iris", batchSize); err != nil {
+func createNetwork(samples int) (net *Network, s *data.Dataset, err error) {
+	if s, err = data.Load("iris", samples, 0); err != nil {
 		return
 	}
 	net = NewNetwork(s.MaxSamples)
@@ -38,8 +38,8 @@ func TestFeedForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(net)
-	t.Logf("input:\n%s\n", d.Test.Input)
-	output := net.FeedForward(d.Test.Input)
+	t.Logf("input:\n%s\n", d.Test.Input[0])
+	output := net.FeedForward(d.Test.Input[0])
 	t.Logf("output:\n%s\n", output)
 }
 

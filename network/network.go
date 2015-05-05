@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
+	"github.com/jnb666/deepthought/mplot"
 	"math"
 	"math/rand"
 	"strings"
@@ -93,13 +94,23 @@ func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 }
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
-func (n *Network) GetError(input, target, targetClass blas.Matrix) (totalError, classError float64) {
-	output := n.FeedForward(input)
-	totalError = n.nodes[n.layers-1].Cost(target) / float64(output.Cols())
-	n.out2class.Apply(output, n.classes)
-	n.classes.Cmp(n.classes, targetClass, epsilon)
-	classError = n.classes.Sum() / float64(output.Rows())
-	return
+func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
+	costFn := n.nodes[n.layers-1].Cost
+	outputs := float64(d.Output[0].Cols())
+	batchSize := float64(d.Output[0].Rows())
+	// calc average over batches
+	totalError := new(mplot.RunningStat)
+	classError := new(mplot.RunningStat)
+	for i, input := range d.Input {
+		// get cost
+		output := n.FeedForward(input)
+		totalError.Push(costFn(d.Output[i]) / outputs)
+		// get classification error
+		n.out2class.Apply(output, n.classes)
+		n.classes.Cmp(n.classes, d.Classes[i], epsilon)
+		classError.Push(n.classes.Sum() / batchSize)
+	}
+	return totalError.Mean, classError.Mean
 }
 
 // CheckGradient method enables gradient check every nepochs runs with max error of maxError
@@ -148,20 +159,36 @@ func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 	return
 }
 
+// Train step method performs one training step
+func (n *Network) TrainStep(in, out blas.Matrix, learnRate float64, s *Stats) {
+	n.FeedForward(in)
+	delta := out
+	for i := n.layers - 1; i >= 0; i-- {
+		delta = n.nodes[i].BackProp(delta, learnRate)
+	}
+	if n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
+		n.doCheck(in, out)
+	}
+}
+
 // Train method trains the network on the given training set and updates the stats.
 // stop callback function returns true if we should terminate the run.
-func (n *Network) Train(d data.Dataset, learnRate float64, s *Stats, stop func(*Stats) bool) int {
+func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(*Stats) bool) int {
 	n.out2class = d.OutputToClass
 	s.StartRun()
 	for {
-		n.FeedForward(d.Train.Input)
-		delta := d.Train.Output
-		for i := n.layers - 1; i >= 0; i-- {
-			delta = n.nodes[i].BackProp(delta, learnRate)
+		// train over each batch of data
+		nbatch := len(d.Train.Input)
+		for i, input := range d.Train.Input {
+			n.TrainStep(input, d.Train.Output[i], learnRate, s)
+			if nbatch > 1 {
+				fmt.Printf("\repoch: %d  batch: %d/%d", s.Epoch, i+1, nbatch)
+			}
 		}
-		if n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
-			n.doCheck(d.Train.Input, d.Train.Output)
+		if nbatch > 1 {
+			fmt.Println()
 		}
+		// update stats and check stopping condition
 		s.Update(n, d)
 		if stop(s) {
 			break

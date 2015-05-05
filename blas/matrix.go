@@ -29,7 +29,7 @@ type Matrix interface {
 	Data(Ordering) []float64
 	Join(a, b Matrix) Matrix
 	Slice(col1, col2 int) Matrix
-	Row(int) Matrix
+	Row(i int) Matrix
 	Scale(s float64) Matrix
 	Add(a, b Matrix) Matrix
 	Sub(a, b Matrix) Matrix
@@ -70,7 +70,53 @@ type UnaryFunction interface {
 	Apply(in, out Matrix) Matrix
 }
 
+// Unary64 represents a float64 function of one variable
+type Unary64 func(float64) float64
+
+// Apply method applies a function to each element in a matrix
+func (fn Unary64) Apply(in, out Matrix) Matrix {
+	out.Reshape(in.Rows(), in.Cols())
+	switch implementation {
+	case Native32:
+		a, b := in.(*native32), out.(*native32)
+		for i, val := range a.data[:a.rows*a.cols] {
+			b.data[i] = float32(fn(float64(val)))
+		}
+	case Native64:
+		a, b := in.(*native64), out.(*native64)
+		for i, val := range a.data[:a.rows*a.cols] {
+			b.data[i] = fn(val)
+		}
+	default:
+		panic("invalid implementation for apply")
+	}
+	return out
+}
+
 // Function2 interface applies a function elementwise to two matrices
 type BinaryFunction interface {
 	Apply(a, b, out Matrix) Matrix
+}
+
+// Binary64 represents a float64 function of two variables
+type Binary64 func(a, b float64) float64
+
+// Apply method applies a function to each element in a matrix
+func (fn Binary64) Apply(m1, m2, out Matrix) Matrix {
+	checkEqualSize("binary64:Apply", m1, m2, out)
+	switch implementation {
+	case Native32:
+		a, b, c := m1.(*native32), m2.(*native32), out.(*native32)
+		for i := range a.data[:a.rows*a.cols] {
+			c.data[i] = float32(fn((float64(a.data[i])), float64(b.data[i])))
+		}
+	case Native64:
+		a, b, c := m1.(*native64), m2.(*native64), out.(*native64)
+		for i := range a.data[:a.rows*a.cols] {
+			c.data[i] = fn(a.data[i], b.data[i])
+		}
+	default:
+		panic("invalid implementation for apply")
+	}
+	return out
 }

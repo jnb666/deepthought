@@ -27,7 +27,9 @@ type loader struct{}
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-func (loader) Load(samples int) (s data.Dataset, err error) {
+// TODO implement batch loading
+func (loader) Load(samples, batchSize int) (s *data.Dataset, err error) {
+	s = new(data.Dataset)
 	s.OutputToClass = classify{}
 	// test set
 	images, size := readData(testLabels, testImages, 0, -1, samples)
@@ -91,7 +93,6 @@ func readData(labelFile, imageFile string, from, to, samples int) ([]image, int)
 	images := make([]image, samples)
 	size := imageDef.Width * imageDef.Height
 	if from > 0 {
-		fmt.Println("seek to image", from)
 		if _, err = f.Seek(int64(from)*int64(size), 1); err != nil {
 			panic(fmt.Sprintf("error in seek on %s: %s", labelFile, err))
 		}
@@ -127,9 +128,9 @@ func parseData(img []image, size int) (d *data.Data, nin, nout int) {
 			class[i] = float64(image.label)
 		}
 	}
-	d.Input = blas.New(d.NumSamples, nin).Load(blas.RowMajor, in...)
-	d.Output = blas.New(d.NumSamples, nout).Load(blas.RowMajor, out...)
-	d.Classes = blas.New(d.NumSamples, 1).Load(blas.RowMajor, class...)
+	d.Input = []blas.Matrix{blas.New(d.NumSamples, nin).Load(blas.RowMajor, in...)}
+	d.Output = []blas.Matrix{blas.New(d.NumSamples, nout).Load(blas.RowMajor, out...)}
+	d.Classes = []blas.Matrix{blas.New(d.NumSamples, 1).Load(blas.RowMajor, class...)}
 	return
 }
 
