@@ -8,9 +8,9 @@ import (
 )
 
 var (
-	threshold = 0.75
-	maxEpoch  = 50
-	learnRate = 2.0
+	threshold = 0.6
+	maxEpoch  = 100
+	learnRate = 0.5
 )
 
 // load the data and setup the network - this is a simple single layer net
@@ -20,7 +20,7 @@ func setup() (*data.Dataset, *network.Network) {
 	checkErr(err)
 	net := network.NewNetwork(d.MaxSamples)
 	net.AddLayer(d.NumInputs, d.NumOutputs, network.NilFunc)
-	net.CrossEntropyOutput(d.NumOutputs, network.Sigmoid)
+	net.CrossEntropyOutput(d.NumOutputs)
 	if debug {
 		net.CheckGradient(10, 0.02)
 	}

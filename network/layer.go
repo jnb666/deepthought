@@ -79,16 +79,14 @@ func (l *layer) BackProp(err blas.Matrix, eta float64) blas.Matrix {
 }
 
 type outLayer struct {
-	activ  Activation
 	values blas.Matrix // Z matrix of values at each node [samples, nodes]
 	delta  blas.Matrix // D matrix of errors at each node [nodes, samples]
 	deriv  blas.Matrix // Fp matrix of derivative of activation fn [nin, samples]
 	temp   blas.Matrix
 }
 
-func newOutLayer(batch, nodes int, a Activation) *outLayer {
+func newOutLayer(batch, nodes int) *outLayer {
 	return &outLayer{
-		activ:  a,
 		values: blas.New(batch, nodes),
 		delta:  blas.New(batch, nodes),
 		deriv:  blas.New(batch, nodes),
@@ -100,21 +98,23 @@ func (l *outLayer) Weights() blas.Matrix { panic("no weights for output layer!")
 
 func (l *outLayer) Gradient() blas.Matrix { panic("no gradient for output layer!") }
 
-func (l *outLayer) FeedForward(in blas.Matrix) blas.Matrix {
-	if l.activ.Func != nil {
-		l.activ.Func.Apply(in, l.values)
-		l.activ.Deriv.Apply(in, l.deriv)
-	} else {
-		l.values = in
-	}
-	return l.values
+type quadraticOutput struct {
+	*outLayer
+	activ Activation
 }
-
-type quadraticOutput struct{ *outLayer }
 
 // QuadraticOutput method appends a quadratic cost output layer to the network.
 func (n *Network) QuadraticOutput(nodes int, a Activation) {
-	n.Add(&quadraticOutput{newOutLayer(n.batchSize, nodes, a)})
+	n.Add(&quadraticOutput{
+		outLayer: newOutLayer(n.batchSize, nodes),
+		activ:    a,
+	})
+}
+
+func (l *quadraticOutput) FeedForward(in blas.Matrix) blas.Matrix {
+	l.activ.Func.Apply(in, l.values)
+	l.activ.Deriv.Apply(in, l.deriv)
+	return l.values
 }
 
 func (l *quadraticOutput) BackProp(target blas.Matrix, eta float64) blas.Matrix {
@@ -128,7 +128,9 @@ func (l *quadraticOutput) Cost(target blas.Matrix) float64 {
 	return 0.5 * l.temp.Sum() / float64(target.Rows())
 }
 
-type crossEntropy struct{ *outLayer }
+type crossEntropy struct {
+	*outLayer
+}
 
 var quadCost = blas.Binary64(func(x, y float64) float64 {
 	res := -y*math.Log(x) - (1-y)*math.Log(1-x)
@@ -139,8 +141,15 @@ var quadCost = blas.Binary64(func(x, y float64) float64 {
 })
 
 // CrossEntropyOutput method appends a cross entropy output layer to the network.
-func (n *Network) CrossEntropyOutput(nodes int, a Activation) {
-	n.Add(&crossEntropy{newOutLayer(n.batchSize, nodes, a)})
+func (n *Network) CrossEntropyOutput(nodes int) {
+	n.Add(&crossEntropy{
+		outLayer: newOutLayer(n.batchSize, nodes),
+	})
+}
+
+func (l *crossEntropy) FeedForward(in blas.Matrix) blas.Matrix {
+	l.values = in
+	return l.values
 }
 
 func (l *crossEntropy) BackProp(target blas.Matrix, eta float64) blas.Matrix {

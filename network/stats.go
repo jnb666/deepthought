@@ -9,7 +9,7 @@ import (
 
 const (
 	ymin = 0.0
-	ymax = 0.1
+	ymax = 0.01
 )
 
 // Stats struct has matrix with error on each set over time

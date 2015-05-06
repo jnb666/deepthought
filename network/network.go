@@ -36,22 +36,24 @@ func dtanh(x float64) float64 { y := math.Tanh(x); return 1 - y*y }
 
 // Neural network type is an array of layers.
 type Network struct {
-	nodes      []Layer
-	layers     int
-	batchSize  int
-	classes    blas.Matrix
-	bias       blas.Matrix
-	out2class  blas.UnaryFunction
-	checkEvery int
-	checkMax   float64
+	nodes       []Layer
+	layers      int
+	batchSize   int
+	classes     blas.Matrix
+	bias        blas.Matrix
+	out2class   blas.UnaryFunction
+	checkEvery  int
+	checkMax    float64
+	testBatches int
 }
 
 // NewNetwork function initialises a new network, samples is the maximum number of samples, i.e. minibatch size.
 func NewNetwork(samples int) *Network {
 	return &Network{
-		batchSize: samples,
-		classes:   blas.New(samples, 1),
-		bias:      blas.New(samples, 1).Load(blas.ColMajor, 1),
+		batchSize:   samples,
+		classes:     blas.New(samples, 1),
+		bias:        blas.New(samples, 1).Load(blas.ColMajor, 1),
+		testBatches: 1,
 	}
 }
 
@@ -93,28 +95,32 @@ func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 	return m
 }
 
+// Set number of batches to use when evaluating the error
+func (n *Network) TestBatches(num int) {
+	n.testBatches = num
+}
+
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
 	costFn := n.nodes[n.layers-1].Cost
 	outputs := float64(d.Output[0].Cols())
 	batchSize := float64(d.Output[0].Rows())
-	// calc average over batches
+	// calc average over a random sample of test batches
 	totalError := new(mplot.RunningStat)
 	classError := new(mplot.RunningStat)
-	nbatch := len(d.Input)
-	for i, input := range d.Input {
-		if nbatch > 1 {
-			fmt.Printf("\rtest batch: %d/%d        ", i+1, nbatch)
+	for i, batch := range rand.Perm(n.testBatches) {
+		if n.testBatches > 1 {
+			fmt.Printf("\rtest batch: %d/%d        ", i+1, n.testBatches)
 		}
 		// get cost
-		output := n.FeedForward(input)
-		totalError.Push(costFn(d.Output[i]) / outputs)
+		output := n.FeedForward(d.Input[batch])
+		totalError.Push(costFn(d.Output[batch]) / outputs)
 		// get classification error
 		n.out2class.Apply(output, n.classes)
-		n.classes.Cmp(n.classes, d.Classes[i], epsilon)
+		n.classes.Cmp(n.classes, d.Classes[batch], epsilon)
 		classError.Push(n.classes.Sum() / batchSize)
 	}
-	if nbatch > 1 {
+	if n.testBatches > 1 {
 		fmt.Print("\r")
 	}
 	return totalError.Mean, classError.Mean
@@ -185,13 +191,15 @@ func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(
 	s.StartRun()
 	for {
 		s.StartEpoch = time.Now()
-		// train over each batch of data
+		// train over each batch of data - present batches in random order
 		nbatch := len(d.Train.Input)
-		for i, input := range d.Train.Input {
-			if nbatch > 1 {
+		if nbatch > 1 {
+			for i, batch := range rand.Perm(nbatch) {
 				fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
+				n.TrainStep(d.Train.Input[batch], d.Train.Output[batch], learnRate, s)
 			}
-			n.TrainStep(input, d.Train.Output[i], learnRate, s)
+		} else {
+			n.TrainStep(d.Train.Input[0], d.Train.Output[0], learnRate, s)
 		}
 		// update stats and check stopping condition
 		s.Update(n, d)
