@@ -26,6 +26,7 @@ func main() {
 	fmt.Printf("loaded digits: %d training, %d test, %d validation\n",
 		d.Train.NumSamples, d.Test.NumSamples, d.Valid.NumSamples)
 	dataset := d.Test
+	dataset.Input[0].SetFormat("%.0f")
 
 	window, err := mplot.NewWindow(width, height, "digits")
 	checkErr(err)
@@ -47,8 +48,8 @@ func main() {
 		for {
 			for i := range plt {
 				ix := page*rows*cols + i
-				data := dataset.Input[0].Row(ix).Data(blas.ColMajor)
-				mat[i].Load(blas.ColMajor, data...)
+				mat[i].Copy(dataset.Input[0].Row(ix, ix+1).Reshape(imgSize, imgSize, true))
+				//fmt.Printf("%d: \n%s\n", i, mat[i])
 				plt[i].Title.Text = fmt.Sprintf("test %d: %.0f", ix, labels[ix])
 			}
 			fmt.Print("hit return for next page")

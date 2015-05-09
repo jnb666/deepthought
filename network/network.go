@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	epsilon = 1e-4
+	epsilon = 1e-5
 )
 
 // Activation type represents the activation function and derivative
@@ -23,9 +23,10 @@ type Activation struct {
 
 // Standard activation functions
 var (
-	NilFunc = Activation{nil, nil}
+	Linear  = Activation{linear{}, nil}
 	Sigmoid = Activation{blas.Unary64(sigmoid), blas.Unary64(dsigmoid)}
 	Tanh    = Activation{blas.Unary64(math.Tanh), blas.Unary64(dtanh)}
+	Softmax = Activation{softmax{}, nil}
 )
 
 func sigmoid(x float64) float64 { return 1 / (1 + math.Exp(-x)) }
@@ -34,39 +35,52 @@ func dsigmoid(x float64) float64 { y := sigmoid(x); return y * (1 - y) }
 
 func dtanh(x float64) float64 { y := math.Tanh(x); return 1 - y*y }
 
+type linear struct{}
+
+func (linear) Apply(x, y blas.Matrix) blas.Matrix {
+	return y.Copy(x)
+}
+
+type softmax struct{}
+
+func (softmax) Apply(x, y blas.Matrix) blas.Matrix {
+	blas.Unary64(math.Exp).Apply(x, y)
+	return y.Norm(y)
+}
+
 // Neural network type is an array of layers.
 type Network struct {
-	nodes       []Layer
-	layers      int
-	batchSize   int
-	classes     blas.Matrix
-	bias        blas.Matrix
-	out2class   blas.UnaryFunction
-	checkEvery  int
-	checkMax    float64
-	testBatches int
+	Nodes        []Layer
+	Layers       int
+	BatchSize    int
+	classes      blas.Matrix
+	out2class    blas.UnaryFunction
+	checkEvery   int
+	checkSamples int
+	checkMax     float64
+	checkScale   float64
+	testBatches  int
 }
 
 // NewNetwork function initialises a new network, samples is the maximum number of samples, i.e. minibatch size.
 func NewNetwork(samples int) *Network {
 	return &Network{
-		batchSize:   samples,
+		BatchSize:   samples,
 		classes:     blas.New(samples, 1),
-		bias:        blas.New(samples, 1).Load(blas.ColMajor, 1),
 		testBatches: 1,
 	}
 }
 
 // Add method appends a new layer to the network
 func (n *Network) Add(l Layer) {
-	n.nodes = append(n.nodes, l)
-	n.layers++
+	n.Nodes = append(n.Nodes, l)
+	n.Layers++
 }
 
 // String method returns a printable representation of the network.
 func (n *Network) String() string {
-	str := make([]string, len(n.nodes))
-	for i, layer := range n.nodes[:n.layers-1] {
+	str := make([]string, len(n.Nodes))
+	for i, layer := range n.Nodes[:n.Layers-1] {
 		str[i] = fmt.Sprintf("== Layer %d ==\n%s", i, layer.Weights())
 	}
 	return strings.Join(str, "\n")
@@ -76,7 +90,7 @@ func (n *Network) String() string {
 // Uses a normal distribution with mean zero and std dev 1/sqrt(num_inputs) for the weights.
 // Bias weights are left at zero.
 func (n *Network) SetRandomWeights() {
-	for _, layer := range n.nodes[:n.layers-1] {
+	for _, layer := range n.Nodes[:n.Layers-1] {
 		w := layer.Weights()
 		nin, nout := w.Cols(), w.Rows()
 		data := make([]float64, nin*nout)
@@ -89,7 +103,7 @@ func (n *Network) SetRandomWeights() {
 
 // FeedForward method calculates output from the network given input
 func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
-	for _, layer := range n.nodes {
+	for _, layer := range n.Nodes {
 		m = layer.FeedForward(m)
 	}
 	return m
@@ -102,7 +116,7 @@ func (n *Network) TestBatches(num int) {
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
-	costFn := n.nodes[n.layers-1].Cost
+	costFn := n.Nodes[n.Layers-1].Cost
 	outputs := float64(d.Output[0].Cols())
 	batchSize := float64(d.Output[0].Rows())
 	// calc average over a random sample of test batches
@@ -126,61 +140,81 @@ func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
 	return totalError.Mean, classError.Mean
 }
 
-// CheckGradient method enables gradient check every nepochs runs with max error of maxError
-func (n *Network) CheckGradient(nepochs int, maxError float64) {
+// CheckGradient method enables gradient check every nepochs runs with max error of maxError.
+// if samples is > 0 then limit to this number of samples per layer.
+// scale fudge factor shouldn't be needed!
+func (n *Network) CheckGradient(nepochs int, maxError float64, samples int, scale float64) {
 	n.checkEvery = nepochs
 	n.checkMax = maxError
+	n.checkSamples = samples
+	n.checkScale = scale
 }
 
 func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
-	output := n.nodes[n.layers-1]
+	output := n.Nodes[n.Layers-1]
 	ok = true
-	for i, layer := range n.nodes[:n.layers-1] {
+	for nlayer, layer := range n.Nodes[:n.Layers-1] {
 		w := layer.Weights()
-		weight := w.Data(blas.ColMajor)
-		wsave := append([]float64{}, weight...)
-		grads := layer.Gradient().Data(blas.ColMajor)
-		diffs := make([]float64, w.Size())
-		projs := make([]float64, w.Size())
-		maxDiff := 0.0
-		for i, val := range weight {
-			weight[i] = val - epsilon
-			w.Load(blas.ColMajor, weight...)
-			n.FeedForward(input)
-			cost1 := output.Cost(target)
-			weight[i] = val + epsilon
-			w.Load(blas.ColMajor, weight...)
-			n.FeedForward(input)
-			cost2 := output.Cost(target)
-			projs[i] = (cost1 - cost2) / (2 * epsilon)
-			diffs[i] = grads[i] - projs[i]
-			maxDiff = math.Max(maxDiff, math.Abs(diffs[i]))
+		weight := w.Data(blas.RowMajor)
+		gradData := layer.Gradient().Data(blas.RowMajor)
+		nweight := len(weight)
+		samples := n.checkSamples
+		if samples == 0 || nweight < samples {
+			samples = nweight
 		}
-		fmt.Printf("LAYER %d : max diff=%.8f\n", i, maxDiff)
+		grads := make([]float64, samples)
+		diffs := make([]float64, samples)
+		projs := make([]float64, samples)
+		maxDiff := 0.0
+		for i, ix := range rand.Perm(nweight)[:samples] {
+			fmt.Printf("\rcheck %d/%d        ", i+1, samples)
+			val := weight[ix]
+			weight[ix] = val - epsilon
+			w.Load(blas.RowMajor, weight...)
+			n.FeedForward(input)
+			cost1 := output.Cost(target) * n.checkScale
+			weight[ix] = val + epsilon
+			w.Load(blas.RowMajor, weight...)
+			n.FeedForward(input)
+			cost2 := output.Cost(target) * n.checkScale
+			grads[i] = gradData[ix]
+			projs[i] = (cost1 - cost2) / (2 * epsilon)
+			divisor := math.Abs(grads[i]) + math.Abs(projs[i])
+			if divisor > epsilon {
+				diffs[i] = math.Abs(grads[i]-projs[i]) / divisor
+			}
+			maxDiff = math.Max(maxDiff, diffs[i])
+			weight[ix] = val
+		}
+		w.Load(blas.RowMajor, weight...)
+		fmt.Printf("\rLAYER %d : max diff=%.3g epsilon=%g\n", nlayer, maxDiff, epsilon)
 		if maxDiff > n.checkMax {
-			layer.Gradient().SetFormat("%9.6f")
-			proj := blas.New(w.Rows(), w.Cols()).Load(blas.ColMajor, projs...)
-			proj.SetFormat("%9.6f")
-			diff := blas.New(w.Rows(), w.Cols()).Load(blas.ColMajor, diffs...)
-			diff.SetFormat("%9.6f")
-			fmt.Printf("*** WARNING *** GRADIENTS LOOK WRONG!\n%s\n\n%s\n\n%s\n",
-				layer.Gradient(), proj, diff)
+			grad := blas.New(1, samples).Load(blas.RowMajor, grads...)
+			grad.SetFormat("%11.8f")
+			proj := blas.New(1, samples).Load(blas.RowMajor, projs...)
+			proj.SetFormat("%11.8f")
+			diff := blas.New(1, samples).Load(blas.RowMajor, diffs...)
+			diff.SetFormat("%11.8f")
+			fmt.Printf("*** WARNING *** GRADIENTS LOOK WRONG!\n%s\n%s\n%s\n", grad, proj, diff)
 			ok = false
 		}
-		w.Load(blas.ColMajor, wsave...)
 	}
 	return
 }
 
 // Train step method performs one training step
-func (n *Network) TrainStep(in, out blas.Matrix, learnRate float64, s *Stats) {
+func (n *Network) TrainStep(in, out blas.Matrix, learnRate float64, s *Stats, batch int) {
 	n.FeedForward(in)
 	delta := out
-	for i := n.layers - 1; i >= 0; i-- {
-		delta = n.nodes[i].BackProp(delta, learnRate)
+	for i := n.Layers - 1; i >= 0; i-- {
+		delta = n.Nodes[i].BackProp(delta, learnRate)
 	}
-	if n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
+	// check gradients?
+	if batch == 0 && n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
 		n.doCheck(in, out)
+	}
+	for _, layer := range n.Nodes[:n.Layers-1] {
+		layer.Weights().Add(layer.Weights(), layer.Gradient(), 1)
 	}
 }
 
@@ -196,10 +230,10 @@ func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(
 		if nbatch > 1 {
 			for i, batch := range rand.Perm(nbatch) {
 				fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
-				n.TrainStep(d.Train.Input[batch], d.Train.Output[batch], learnRate, s)
+				n.TrainStep(d.Train.Input[batch], d.Train.Output[batch], learnRate, s, batch)
 			}
 		} else {
-			n.TrainStep(d.Train.Input[0], d.Train.Output[0], learnRate, s)
+			n.TrainStep(d.Train.Input[0], d.Train.Output[0], learnRate, s, 0)
 		}
 		// update stats and check stopping condition
 		s.Update(n, d)
@@ -207,6 +241,7 @@ func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(
 			break
 		}
 		s.Epoch++
+
 	}
 	s.EndRun()
 	return s.Epoch

@@ -116,7 +116,7 @@ func main() {
 	if !batch {
 		runtime.LockOSThread()
 	}
-	blas.Init(blas.Native32)
+	blas.Init(blas.Native64)
 
 	// setup the network
 	network.SeedRandom(seed)
@@ -134,11 +134,4 @@ func main() {
 			window.Draw(rows, cols, plt...)
 		}
 	}
-}
-
-func max(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }

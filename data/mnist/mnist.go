@@ -35,7 +35,7 @@ func (classify) Apply(out, class blas.Matrix) blas.Matrix { return class.MaxCol(
 type loader struct{}
 
 // rescale intensity to value
-func rescale(x uint8) float64 { return 0.8 * (float64(x) / 255) }
+func rescale(x uint8) float64 { return float64(x) / 255 }
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
@@ -170,7 +170,7 @@ func (r *imageReader) readBatch(n int) (in, out, class blas.Matrix) {
 		}
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
-				idata[i*size*size+y*size+size-x-1] = rescale(image[x*size+y])
+				idata[i*size*size+y*size+x] = rescale(image[(size-y-1)*size+x])
 			}
 		}
 		for j := 0; j < numOutputs; j++ {
