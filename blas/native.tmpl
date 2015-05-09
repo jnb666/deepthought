@@ -1,54 +1,54 @@
 package blas
 
-// matrix of float32 stored internally in row major order
-type native32 struct {
+// matrix of {{.Type}} stored internally in row major order
+type {{.Struct}} struct {
 	rows   int
 	cols   int
 	stride int
-	data   []float32
+	data   []{{.Type}}
 	format string
 }
 
 // constructor
-func newnative32(rows, cols int) Matrix {
-	return &native32{
+func new{{.Struct}}(rows, cols int) Matrix {
+	return &{{.Struct}}{
 		rows:   rows,
 		cols:   cols,
 		stride: cols,
-		data:   make([]float32, rows*cols),
+		data:   make([]{{.Type}}, rows*cols),
 		format: "%8.4f",
 	}
 }
 
 // accessors
-func (m *native32) Rows() int { return m.rows }
+func (m *{{.Struct}}) Rows() int { return m.rows }
 
-func (m *native32) Cols() int { return m.cols }
+func (m *{{.Struct}}) Cols() int { return m.cols }
 
-func (m *native32) Size() int { return len(m.data) }
+func (m *{{.Struct}}) Size() int { return len(m.data) }
 
-func (m *native32) SetFormat(f string) { m.format = f }
+func (m *{{.Struct}}) SetFormat(f string) { m.format = f }
 
-func (m *native32) String() string { 
+func (m *{{.Struct}}) String() string { 
 	return format(m.format, m.rows, m.cols, m.Data(RowMajor))
 }
 
-func (m *native32) at(row, col int) float32 {
+func (m *{{.Struct}}) at(row, col int) {{.Type}} {
 	return m.data[row*m.stride + col] 
 }
 
-func (m *native32) set(row, col int, val float32) { 
+func (m *{{.Struct}}) set(row, col int, val {{.Type}}) { 
 	m.data[row*m.stride + col] = val
 }
 
 // Load method initialises a matrix with data from a list of float64 values.
 // If the number of values is less than the size then they are repeated to fill the matrix.
-func (m *native32) Load(order Ordering, vals ...float64) Matrix {
+func (m *{{.Struct}}) Load(order Ordering, vals ...float64) Matrix {
 	if len(vals) == 0 {
 		panic("blas:Load - no data provided")
 	}
 	if len(vals) == 1 {
-		val := float32(vals[0])
+		val := {{.Type}}(vals[0])
 		for row := 0; row < m.rows; row++ {
 			for col := 0; col < m.cols; col++ {
 				m.set(row, col, val)
@@ -60,13 +60,13 @@ func (m *native32) Load(order Ordering, vals ...float64) Matrix {
 	if order == RowMajor {
 		for row := 0; row < m.rows; row++ {
 			for col := 0; col < m.cols; col++ {
-				m.set(row, col, float32(next()))
+				m.set(row, col, {{.Type}}(next()))
 			}
 		}
 	} else {
 		for col := 0; col < m.cols; col++ {
 			for row := 0; row < m.rows; row++ {
-				m.set(row, col, float32(next()))
+				m.set(row, col, {{.Type}}(next()))
 			}
 		}
 	}
@@ -74,7 +74,7 @@ func (m *native32) Load(order Ordering, vals ...float64) Matrix {
 }
 
 // Data method returns a copy of the matrix data as a slice
-func (m *native32) Data(order Ordering) []float64 {
+func (m *{{.Struct}}) Data(order Ordering) []float64 {
 	data := make([]float64, m.rows*m.cols)
 	i := 0
 	if order == RowMajor {
@@ -96,8 +96,8 @@ func (m *native32) Data(order Ordering) []float64 {
 }
 
 // Copy method returs a copy of the input matrix
-func (m *native32) Copy(in Matrix) Matrix {
-	a := in.(*native32)
+func (m *{{.Struct}}) Copy(in Matrix) Matrix {
+	a := in.(*{{.Struct}})
 	m.Reshape(a.rows, a.cols, false)
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
@@ -108,7 +108,7 @@ func (m *native32) Copy(in Matrix) Matrix {
 }
 
 // Reshape method changes the dimensions without altering the data
-func (m *native32) Reshape(rows, cols int, shrink bool) Matrix {
+func (m *{{.Struct}}) Reshape(rows, cols int, shrink bool) Matrix {
 	if m.Size() < rows*cols {
 		panic("blas:Reshape - matrix is too small")
 	}
@@ -120,8 +120,8 @@ func (m *native32) Reshape(rows, cols int, shrink bool) Matrix {
 }
 
 // Row method returns a view on the matrix with rows [r1:r2] exclusive.
-func (m *native32) Row(r1, r2 int) Matrix {
-	return &native32{
+func (m *{{.Struct}}) Row(r1, r2 int) Matrix {
+	return &{{.Struct}}{
 		rows:	r2-r1,
 		cols:	m.cols,
 		stride: m.stride,
@@ -131,8 +131,8 @@ func (m *native32) Row(r1, r2 int) Matrix {
 }
 
 // Col method returns a view on the matrix with columns [c1:c2] exclusive.
-func (m *native32) Col(c1, c2 int) Matrix {
-	return &native32{
+func (m *{{.Struct}}) Col(c1, c2 int) Matrix {
+	return &{{.Struct}}{
 		rows:	m.rows,
 		cols:	c2-c1,
 		stride: m.stride,
@@ -142,8 +142,8 @@ func (m *native32) Col(c1, c2 int) Matrix {
 }
 
 // Scale method muliplies each element of the matrix by a scalar.
-func (m *native32) Scale(s float64) Matrix {
-	sc := float32(s)
+func (m *{{.Struct}}) Scale(s float64) Matrix {
+	sc := {{.Type}}(s)
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
 			m.set(row, col, m.at(row, col)*sc)
@@ -153,10 +153,10 @@ func (m *native32) Scale(s float64) Matrix {
 }
 
 // Add method evaluates a + sc * b and puts the result in m.
-func (m *native32) Add(m1, m2 Matrix, sc float64) Matrix {
+func (m *{{.Struct}}) Add(m1, m2 Matrix, sc float64) Matrix {
 	checkEqualSize("blas:Add", m1, m2, m)
-	a, b := m1.(*native32), m2.(*native32)
-	scale := float32(sc)
+	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
+	scale := {{.Type}}(sc)
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
 			m.set(row, col, a.at(row, col) + scale*b.at(row, col))
@@ -166,10 +166,10 @@ func (m *native32) Add(m1, m2 Matrix, sc float64) Matrix {
 }
 
 // Cmp method compares a and b and returns a matrix with 0 where they are equal else 1.
-func (m *native32) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
+func (m *{{.Struct}}) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 	checkEqualSize("blas:Cmp", m1, m2, m)
-	a, b := m1.(*native32), m2.(*native32)
-	eps := float32(epsilon)
+	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
+	eps := {{.Type}}(epsilon)
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
 			ax, bx := a.at(row, col), b.at(row, col)
@@ -184,9 +184,9 @@ func (m *native32) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 }
 
 // MulElem method performs element wise multiplication of the two input matrices and puts the output in m.
-func (m *native32) MulElem(m1, m2 Matrix) Matrix {
+func (m *{{.Struct}}) MulElem(m1, m2 Matrix) Matrix {
 	checkEqualSize("blas:MulElem", m1, m2, m)
-	a, b := m1.(*native32), m2.(*native32)
+	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
 			m.set(row, col, a.at(row, col) * b.at(row, col))
@@ -197,8 +197,8 @@ func (m *native32) MulElem(m1, m2 Matrix) Matrix {
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
 // If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *native32) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
-	a, b := m1.(*native32), m2.(*native32)
+func (m *{{.Struct}}) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
+	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
 	acols, arows, bcols, brows := a.cols, a.rows, b.cols, b.rows
 	aix := func(row, k int) int { return row*a.stride + k }
 	bix := func(col, k int) int { return k*b.stride + col }
@@ -218,7 +218,7 @@ func (m *native32) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
 		m.stride = arows
 		for row := 0; row < arows; row++ {
 			for col := 0; col < bcols; col++ {
-				sum := float32(0)
+				sum := {{.Type}}(0)
 				for k := 0; k < acols; k++ {
 					sum += a.data[aix(row, k)] * b.data[bix(col, k)]
 				}
@@ -230,7 +230,7 @@ func (m *native32) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
 		m.stride = bcols		
 		for row := 0; row < arows; row++ {
 			for col := 0; col < bcols; col++ {
-				sum := float32(0)
+				sum := {{.Type}}(0)
 				for k := 0; k < acols; k++ {
 					sum += a.data[aix(row, k)] * b.data[bix(col, k)]
 				}
@@ -242,7 +242,7 @@ func (m *native32) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
 }
 
 // Sum method calculates the sum of the values in the matrix
-func (m *native32) Sum() float64 {
+func (m *{{.Struct}}) Sum() float64 {
 	sum := 0.0
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
@@ -253,34 +253,34 @@ func (m *native32) Sum() float64 {
 }
 
 // MaxCol method gets the column number with the maximim value for each row of the input matrix.
-func (v *native32) MaxCol(in Matrix) Matrix {
-	m := in.(*native32)
+func (v *{{.Struct}}) MaxCol(in Matrix) Matrix {
+	m := in.(*{{.Struct}})
 	if v.Size() < m.rows {
 		panic("blas:MaxCol - output matrix is too small")
 	}
 	v.rows, v.cols = m.rows, 1
 	for row := 0; row < m.rows; row++ {
-		max, maxcol := float32(-1e38), 0
+		max, maxcol := {{.Type}}(-1e38), 0
 		for col := 0; col < m.cols; col++ {
 			if val := m.at(row, col); val > max {
 				max, maxcol = val, col
 			}
 		}
-		v.data[row] = float32(maxcol)
+		v.data[row] = {{.Type}}(maxcol)
 	}
 	return v
 }
 
 // Norm method divides each element by the sum of the values in that row.
-func (m *native32) Norm(in Matrix) Matrix {
-	a := in.(*native32)
+func (m *{{.Struct}}) Norm(in Matrix) Matrix {
+	a := in.(*{{.Struct}})
 	m.Reshape(a.rows, a.cols, false)
 	for row := 0; row < m.rows; row++ {
 		sum := 0.0
 		for col := 0; col < m.cols; col++ {
 			sum += float64(a.at(row, col))
 		}
-		scale := 1.0 / float32(sum)
+		scale := 1.0 / {{.Type}}(sum)
 		for col := 0; col < m.cols; col++ {
 			m.set(row, col, scale * a.at(row, col))
 		}
@@ -288,25 +288,25 @@ func (m *native32) Norm(in Matrix) Matrix {
 	return m
 }
 
-func (m *native32) apply(in Matrix, fn Unary64) {
-	a := in.(*native32)
+func (m *{{.Struct}}) apply(in Matrix, fn Unary64) {
+	a := in.(*{{.Struct}})
 	m.Reshape(a.rows, a.cols, false)
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
 			val := float64(a.at(row, col))
-			m.set(row, col, float32(fn(val)))
+			m.set(row, col, {{.Type}}(fn(val)))
 		}
 	}
 }
 
-func (m *native32) apply2(m1, m2 Matrix, fn Binary64) {
+func (m *{{.Struct}}) apply2(m1, m2 Matrix, fn Binary64) {
 	checkEqualSize("binary64:Apply", m1, m2, m)
-	a, b := m1.(*native32), m2.(*native32)
+	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
 	for row := 0; row < m.rows; row++ {
 		for col := 0; col < m.cols; col++ {
 			v1 := float64(a.at(row, col))
 			v2 := float64(b.at(row, col))
-			m.set(row, col, float32(fn(v1, v2)))
+			m.set(row, col, {{.Type}}(fn(v1, v2)))
 		}
 	}
 }

@@ -1,5 +1,8 @@
 package blas
 
+//go:generate gentype -struct native32 -type float32 native.tmpl native32.go
+//go:generate gentype -struct native64 -type float64 native.tmpl native64.go
+
 var implementation Impl
 
 // Different implementations which can be selected
@@ -24,20 +27,20 @@ type Matrix interface {
 	Rows() int
 	Cols() int
 	Size() int
-	Reshape(rows, cols int) Matrix
+	Copy(m Matrix) Matrix
+	Reshape(rows, cols int, shrink bool) Matrix
 	Load(Ordering, ...float64) Matrix
 	Data(Ordering) []float64
-	Join(a, b Matrix) Matrix
-	Slice(col1, col2 int) Matrix
-	Row(i int) Matrix
+	Col(col1, col2 int) Matrix
+	Row(row1, row2 int) Matrix
 	Scale(s float64) Matrix
-	Add(a, b Matrix) Matrix
-	Sub(a, b Matrix) Matrix
+	Add(a, b Matrix, sc float64) Matrix
 	Cmp(a, b Matrix, epsilon float64) Matrix
 	Mul(a, b Matrix, aTrans, bTrans, outTrans bool) Matrix
 	MulElem(a, b Matrix) Matrix
 	Sum() float64
 	MaxCol(m Matrix) Matrix
+	Norm(m Matrix) Matrix
 	SetFormat(string)
 	String() string
 }
@@ -56,9 +59,9 @@ func Implementation() Impl {
 func New(rows, cols int) (m Matrix) {
 	switch implementation {
 	case Native32:
-		m = newNative32(rows, cols)
+		m = newnative32(rows, cols)
 	case Native64:
-		m = newNative64(rows, cols)
+		m = newnative64(rows, cols)
 	default:
 		panic("matrix implementation is not set - call init first")
 	}
@@ -75,20 +78,13 @@ type Unary64 func(float64) float64
 
 // Apply method applies a function to each element in a matrix
 func (fn Unary64) Apply(in, out Matrix) Matrix {
-	out.Reshape(in.Rows(), in.Cols())
-	switch implementation {
-	case Native32:
-		a, b := in.(*native32), out.(*native32)
-		for i, val := range a.data[:a.rows*a.cols] {
-			b.data[i] = float32(fn(float64(val)))
-		}
-	case Native64:
-		a, b := in.(*native64), out.(*native64)
-		for i, val := range a.data[:a.rows*a.cols] {
-			b.data[i] = fn(val)
-		}
+	switch m := out.(type) {
+	case *native32:
+		m.apply(in, fn)
+	case *native64:
+		m.apply(in, fn)
 	default:
-		panic("invalid implementation for apply")
+		panic("invalid type for apply")
 	}
 	return out
 }
@@ -103,20 +99,13 @@ type Binary64 func(a, b float64) float64
 
 // Apply method applies a function to each element in a matrix
 func (fn Binary64) Apply(m1, m2, out Matrix) Matrix {
-	checkEqualSize("binary64:Apply", m1, m2, out)
-	switch implementation {
-	case Native32:
-		a, b, c := m1.(*native32), m2.(*native32), out.(*native32)
-		for i := range a.data[:a.rows*a.cols] {
-			c.data[i] = float32(fn((float64(a.data[i])), float64(b.data[i])))
-		}
-	case Native64:
-		a, b, c := m1.(*native64), m2.(*native64), out.(*native64)
-		for i := range a.data[:a.rows*a.cols] {
-			c.data[i] = fn(a.data[i], b.data[i])
-		}
+	switch m := out.(type) {
+	case *native32:
+		m.apply2(m1, m2, fn)
+	case *native64:
+		m.apply2(m1, m2, fn)
 	default:
-		panic("invalid implementation for apply")
+		panic("invalid type for apply")
 	}
 	return out
 }

@@ -6,8 +6,8 @@ import (
 )
 
 func init() {
-	//Init(Native32)
-	Init(Native64)
+	Init(Native32)
+	//Init(Native64)
 }
 
 func TestLoad(t *testing.T) {
@@ -21,31 +21,6 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func TestJoin(t *testing.T) {
-	m1 := New(3, 3).Reshape(3, 2).Load(ColMajor, 1, 2, 3)
-	m1.SetFormat("%3.0f")
-	t.Logf("\n%s\n", m1)
-	m2 := New(3, 1).Load(ColMajor, 9)
-	m1.Join(m1, m2)
-	t.Logf("\n%s\n", m1)
-	expect := []float64{1, 1, 9, 2, 2, 9, 3, 3, 9}
-	if !reflect.DeepEqual(m1.Data(RowMajor), expect) {
-		t.Error("expected", expect)
-	}
-}
-
-func TestSlice(t *testing.T) {
-	m1 := New(3, 3).Load(ColMajor, 1, 2, 3)
-	m1.SetFormat("%3.0f")
-	t.Logf("\n%s\n", m1)
-	m1.Slice(1, 2).Load(ColMajor, 6)
-	t.Logf("\n%s\n", m1)
-	expect := []float64{1, 6, 1, 2, 6, 2, 3, 6, 3}
-	if !reflect.DeepEqual(m1.Data(RowMajor), expect) {
-		t.Error("expected", expect)
-	}
-}
-
 func TestAdd(t *testing.T) {
 	m1 := New(3, 3).Load(RowMajor, 1, 2)
 	m2 := New(3, 3).Load(RowMajor, 2, 3, 4)
@@ -53,13 +28,39 @@ func TestAdd(t *testing.T) {
 	t.Logf("m1\n%s\n", m1)
 	m2.SetFormat("%3.0f")
 	t.Logf("m2\n%s\n", m2)
-	m := New(3, 3).Add(m1, m2).Scale(10)
+	m := New(3, 3).Add(m1, m2, 1).Scale(10)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
-	m.Sub(m, m2.Scale(10)).Scale(0.1)
+	m.Add(m, m2.Scale(10), -1).Scale(0.1)
 	t.Logf("m\n%s\n", m)
 	if !reflect.DeepEqual(m.Data(RowMajor), m1.Data(RowMajor)) {
 		t.Error("expected m==m1")
+	}
+}
+
+func TestSlice(t *testing.T) {
+	m := New(3, 3).Load(ColMajor, 1, 2, 3)
+	m.SetFormat("%3.0f")
+	t.Logf("\n%s\n", m)
+	m.Col(1, 2).Load(ColMajor, 4, 0, 6)
+	t.Logf("\n%s\n", m)
+	m.Row(1, 2).Load(ColMajor, 2, 5, 0)
+	t.Logf("\n%s\n", m)
+	expect := []float64{1, 2, 3, 4, 5, 6, 1, 0, 3}
+	if !reflect.DeepEqual(m.Data(ColMajor), expect) {
+		t.Error("expected", expect)
+	}
+	a := m.Col(0, 2)
+	t.Logf("a\n%s\n", a)
+	b := New(3, 2).Load(RowMajor, 7, 8, 9, 10, 11, 12)
+	b.SetFormat("%3.0f")
+	t.Logf("b\n%s\n", b)
+	out := New(2, 2).Mul(a, b, true, false, false)
+	out.SetFormat("%3.0f")
+	t.Logf("out\n%s\n", out)
+	expect = []float64{58, 64, 139, 154}
+	if !reflect.DeepEqual(out.Data(RowMajor), expect) {
+		t.Error("atrans: expected", expect)
 	}
 }
 
@@ -78,7 +79,8 @@ func TestMul(t *testing.T) {
 		t.Error("norm: expected", expect)
 	}
 	// check if a is transposed
-	a.Load(ColMajor, 1, 2, 3, 4, 5, 6).Reshape(3, 2)
+	a = New(3, 2).Load(ColMajor, 1, 2, 3, 4, 5, 6)
+	a.SetFormat("%3.0f")
 	t.Logf("a\n%s\n", a)
 	m.Mul(a, b, true, false, false)
 	t.Logf("m\n%s\n", m)
@@ -86,7 +88,8 @@ func TestMul(t *testing.T) {
 		t.Error("atrans: expected", expect)
 	}
 	// check if b is transposed
-	b.Load(ColMajor, 7, 8, 9, 10, 11, 12).Reshape(2, 3)
+	b = New(2, 3).Load(ColMajor, 7, 8, 9, 10, 11, 12)
+	b.SetFormat("%3.0f")
 	t.Logf("b\n%s\n", b)
 	m.Mul(a, b, true, true, false)
 	t.Logf("m\n%s\n", m)
@@ -137,6 +140,18 @@ func TestMaxCol(t *testing.T) {
 	t.Logf("\n%s\n", c)
 	expect := []float64{0, 1, 2, 0, 2}
 	if !reflect.DeepEqual(c.Data(ColMajor), expect) {
-		t.Errorf("expected\n%s\n", expect)
+		t.Error("expected", expect)
+	}
+}
+
+func TestNorm(t *testing.T) {
+	m := New(3, 3).Load(RowMajor, 2, 1, 1, 3, 0, 0, 5, 2.5, -2.5)
+	m.SetFormat("%5.2f")
+	t.Logf("\n%s\n", m)
+	m.Norm(m)
+	t.Logf("\n%s\n", m)
+	expect := []float64{0.5, 0.25, 0.25, 1, 0, 0, 1, 0.5, -0.5}
+	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
+		t.Error("expected", expect)
 	}
 }

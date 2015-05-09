@@ -2,6 +2,7 @@ package blas
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -18,7 +19,7 @@ func getNext(vals []float64) func() float64 {
 	}
 }
 
-// format a matrix for printing.
+// format a matrix for printing. %c is compact single char format
 func format(f string, rows, cols int, data []float64) string {
 	if rows == 0 {
 		return "[]"
@@ -38,11 +39,29 @@ func format(f string, rows, cols int, data []float64) string {
 		}
 		str[row] = begin
 		for col := 0; col < cols; col++ {
-			str[row] += fmt.Sprintf(" "+f, data[cols*row+col])
+			val := data[cols*row+col]
+			if f == "%c" {
+				str[row] += string(toChar(val))
+			} else {
+				str[row] += fmt.Sprintf(" "+f, val)
+			}
 		}
-		str[row] += "  " + end
+		if f != "%c" {
+			str[row] += "  "
+		}
+		str[row] += end
 	}
 	return strings.Join(str, "\n")
+}
+
+func toChar(v float64) byte {
+	if v > 1e-4 {
+		return 'A' + byte(math.Min(v, 1)*25)
+	}
+	if v < -1e-4 {
+		return 'a' + byte(math.Min(-v, 1)*25)
+	}
+	return '.'
 }
 
 // common sanity checks
@@ -51,5 +70,5 @@ func checkEqualSize(caller string, a, b, out Matrix) {
 	if cols != b.Cols() || rows != b.Rows() {
 		panic(caller + " - mismatch in no. of rows and columns in input matrices")
 	}
-	out.Reshape(rows, cols)
+	out.Reshape(rows, cols, false)
 }
