@@ -38,11 +38,6 @@ func (b *Buffer) Read(h *Hardware) cl.ErrorCode {
 	return err
 }
 
-// SetKernelArg method sets the buffer as an argument to a kernel
-func (b *Buffer) setKernelArg(s *Software, argc uint32) cl.ErrorCode {
-	return cl.SetKernelArg(s.Kernel, argc, 8, unsafe.Pointer(&b.Buf))
-}
-
 // Release method frees the buffer memory
 func (b *Buffer) Release() {
 	cl.ReleaseMemObject(b.Buf)

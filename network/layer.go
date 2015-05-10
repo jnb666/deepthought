@@ -73,7 +73,7 @@ func (l *layer) FeedForward(in blas.Matrix) blas.Matrix {
 	}
 	nin := in.Cols()
 	l.input.Reshape(in.Rows(), nin+1, false)
-	l.input.Col(nin, nin+1).Load(blas.ColMajor, 1)
+	l.input.Col(nin, nin+1).Set(1)
 	if Debug {
 		fmt.Printf("Layer %d feedforward: input\n%s\n", l.nlayer, l.input)
 	}

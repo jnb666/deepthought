@@ -49,15 +49,6 @@ func (m *native32) Load(order Ordering, vals ...float64) Matrix {
 	if len(vals) == 0 {
 		panic("blas:Load - no data provided")
 	}
-	if len(vals) == 1 {
-		val := float32(vals[0])
-		for row := 0; row < m.rows; row++ {
-			for col := 0; col < m.cols; col++ {
-				m.set(row, col, val)
-			}
-		}
-		return m
-	}
 	next := getNext(vals)
 	if order == RowMajor {
 		for row := 0; row < m.rows; row++ {
@@ -97,7 +88,7 @@ func (m *native32) Data(order Ordering) []float64 {
 	return data
 }
 
-// Copy method returs a copy of the input matrix
+// Copy method returns a copy of the input matrix
 func (m *native32) Copy(in Matrix) Matrix {
 	a := in.(*native32)
 	m.Reshape(a.rows, a.cols, false)
@@ -141,6 +132,17 @@ func (m *native32) Col(c1, c2 int) Matrix {
 		data:	m.data[c1:],
 		format: m.format,
 	}
+}
+
+// Set method sets all elements of the matrix to the given value
+func (m *native32) Set(val float64) Matrix {
+	value := float32(val)
+	for row := 0; row < m.rows; row++ {
+		for col := 0; col < m.cols; col++ {
+			m.set(row, col, value)
+		}
+	}
+	return m
 }
 
 // Scale method muliplies each element of the matrix by a scalar.

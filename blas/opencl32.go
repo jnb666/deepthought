@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/go-gl/cl/v1.2/cl"
 	"github.com/jnb666/deepthought/scl"
+	"unsafe"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 
 const (
 	copyKernel = iota
+	setKernel
 	scaleKernel
 	addKernel
 	cmpKernel
@@ -33,7 +35,7 @@ const (
 var (
 	hw   *scl.Hardware
 	sw   []*scl.Software
-	name = []string{"copy", "scale", "add", "cmp", "sum", "maxcol", "norm",
+	name = []string{"copy", "set", "scale", "add", "cmp", "sum", "maxcol", "norm",
 		"mul1", "mul2", "mul3", "mul4", "mulelem1", "mulelem2", "mulelem3", "mulelem4"}
 )
 
@@ -53,6 +55,10 @@ typedef struct {
 var source = `
 __kernel void copy(Dims ad, __global float* a, Dims md, __global float* m) {
 	ARG	m[P(md,row,col)] = a[P(ad,row,col)];
+}
+
+__kernel void set(float val, Dims md, __global float* m) {
+	ARG	m[P(md,row,col)] = val;
 }
 
 __kernel void scale(float sc, Dims md, __global float* m) {
@@ -177,6 +183,13 @@ func initCL() {
 	}
 }
 
+func releaseCL() {
+	for _, s := range sw {
+		s.Release()
+	}
+	hw.Release()
+}
+
 // constructor
 func newopencl32(rows, cols int) Matrix {
 	hostData := make([]float32, rows*cols)
@@ -205,14 +218,6 @@ func (m *opencl32) String() string {
 	return format(m.format, int(m.rows), int(m.cols), m.Data(RowMajor))
 }
 
-func (m *opencl32) at(row, col int32) float32 {
-	return m.data[m.base+row*m.stride+col]
-}
-
-func (m *opencl32) set(row, col int32, val float32) {
-	m.data[m.base+row*m.stride+col] = val
-}
-
 // Load method initialises a matrix with data from a list of float64 values.
 // If the number of values is less than the size then they are repeated to fill the matrix.
 func (m *opencl32) Load(order Ordering, vals ...float64) Matrix {
@@ -223,26 +228,17 @@ func (m *opencl32) Load(order Ordering, vals ...float64) Matrix {
 	if err := m.buf.Read(hw); err != cl.SUCCESS {
 		panic(cl.ErrToStr(err))
 	}
-	if len(vals) == 1 {
-		val := float32(vals[0])
+	next := getNext(vals)
+	if order == RowMajor {
 		for row = 0; row < m.rows; row++ {
 			for col = 0; col < m.cols; col++ {
-				m.set(row, col, val)
+				m.data[m.base+row*m.stride+col] = float32(next())
 			}
 		}
 	} else {
-		next := getNext(vals)
-		if order == RowMajor {
+		for col = 0; col < m.cols; col++ {
 			for row = 0; row < m.rows; row++ {
-				for col = 0; col < m.cols; col++ {
-					m.set(row, col, float32(next()))
-				}
-			}
-		} else {
-			for col = 0; col < m.cols; col++ {
-				for row = 0; row < m.rows; row++ {
-					m.set(row, col, float32(next()))
-				}
+				m.data[m.base+row*m.stride+col] = float32(next())
 			}
 		}
 	}
@@ -261,31 +257,19 @@ func (m *opencl32) Data(order Ordering) []float64 {
 	if order == RowMajor {
 		for row = 0; row < m.rows; row++ {
 			for col = 0; col < m.cols; col++ {
-				data[i] = float64(m.at(row, col))
+				data[i] = float64(m.data[m.base+row*m.stride+col])
 				i++
 			}
 		}
 	} else {
 		for col = 0; col < m.cols; col++ {
 			for row = 0; row < m.rows; row++ {
-				data[i] = float64(m.at(row, col))
+				data[i] = float64(m.data[m.base+row*m.stride+col])
 				i++
 			}
 		}
 	}
 	return data
-}
-
-// Copy method returs a copy of the input matrix
-func (m *opencl32) Copy(in Matrix) Matrix {
-	a := in.(*opencl32)
-	m.reshape(a.rows, a.cols, false)
-	err := scl.Run(hw, sw[copyKernel], m.Rows(), m.Cols(), " %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &m.dims, m.buf)
-	if err != nil {
-		panic(err)
-	}
-	return m
 }
 
 // Reshape method changes the dimensions without altering the data
@@ -326,11 +310,40 @@ func (m *opencl32) Col(col1, col2 int) Matrix {
 	}
 }
 
+// Copy method returs a copy of the input matrix
+func (m *opencl32) Copy(in Matrix) Matrix {
+	a := in.(*opencl32)
+	m.reshape(a.rows, a.cols, false)
+	k := sw[copyKernel]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+// Set method sets all elements of the matrix to the given value
+func (m *opencl32) Set(val float64) Matrix {
+	value := float32(val)
+	k := sw[setKernel]
+	k.SetArg(0, wSize, unsafe.Pointer(&value))
+	setArgMatrix(k, 1, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
 // Scale method muliplies each element of the matrix by a scalar.
 func (m *opencl32) Scale(s float64) Matrix {
 	sc := float32(s)
-	err := scl.Run(hw, sw[scaleKernel], m.Rows(), m.Cols(), " %a %a %b ",
-		4, &sc, dSize, &m.dims, m.buf)
+	k := sw[scaleKernel]
+	k.SetArg(0, wSize, unsafe.Pointer(&sc))
+	setArgMatrix(k, 1, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
@@ -342,8 +355,12 @@ func (m *opencl32) Add(m1, m2 Matrix, s float64) Matrix {
 	checkEqualSize("blas:Add", m1, m2, m)
 	a, b := m1.(*opencl32), m2.(*opencl32)
 	sc := float32(s)
-	err := scl.Run(hw, sw[addKernel], m.Rows(), m.Cols(), " %a %a %b %a %b %a %b ",
-		4, &sc, dSize, &a.dims, a.buf, dSize, &b.dims, b.buf, dSize, &m.dims, m.buf)
+	k := sw[addKernel]
+	k.SetArg(0, wSize, unsafe.Pointer(&sc))
+	setArgMatrix(k, 1, a)
+	setArgMatrix(k, 3, b)
+	setArgMatrix(k, 5, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
@@ -355,38 +372,32 @@ func (m *opencl32) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 	checkEqualSize("blas:Cmp", m1, m2, m)
 	a, b := m1.(*opencl32), m2.(*opencl32)
 	eps := float32(epsilon)
-	err := scl.Run(hw, sw[cmpKernel], m.Rows(), m.Cols(), " %a %a %b %a %b %a %b ",
-		4, &eps, dSize, &a.dims, a.buf, dSize, &b.dims, b.buf, dSize, &m.dims, m.buf)
+	k := sw[cmpKernel]
+	k.SetArg(0, wSize, unsafe.Pointer(&eps))
+	setArgMatrix(k, 1, a)
+	setArgMatrix(k, 3, b)
+	setArgMatrix(k, 5, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
 	return m
 }
 
-func transCL(a, b *opencl32, atrans, btrans bool) (ac, ar, bc, br int32, kernel int) {
-	ac, ar, bc, br = a.cols, a.rows, b.cols, b.rows
-	if atrans {
-		ac, ar = ar, ac
-		kernel++
-	}
-	if btrans {
-		bc, br = br, bc
-		kernel += 2
-	}
-	return
-}
-
 // MulElem method performs element wise multiplication of the two input matrices and puts the output in m.
 // If trans1, trans2 flag is set then input matrices are transposed first.
 func (m *opencl32) MulElem(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	ac, ar, bc, br, k := transCL(a, b, trans1, trans2)
+	ac, ar, bc, br, knum := transCL(a, b, trans1, trans2)
 	if ac != bc || ar != br {
 		panic("blas:MulElem - mismatch in no. of rows and columns in input matrices")
 	}
 	m.reshape(ar, ac, true)
-	err := scl.Run(hw, sw[mulElemKernel1+k], m.Rows(), m.Cols(), " %a %b %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &b.dims, b.buf, dSize, &m.dims, m.buf)
+	k := sw[mulElemKernel1+knum]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, b)
+	setArgMatrix(k, 4, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
@@ -397,13 +408,16 @@ func (m *opencl32) MulElem(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 // If trans1, trans2 flag is set then input matrices are transposed first.
 func (m *opencl32) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	ac, ar, bc, br, k := transCL(a, b, trans1, trans2)
+	ac, ar, bc, br, knum := transCL(a, b, trans1, trans2)
 	if ac != br {
 		panic("blas:Mul - mismatch in no. of rows and columns in input matrices")
 	}
 	m.reshape(ar, bc, true)
-	err := scl.Run(hw, sw[mulKernel1+k], m.Rows(), m.Cols(), " %a %b %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &b.dims, b.buf, dSize, &m.dims, m.buf)
+	k := sw[mulKernel1+knum]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, b)
+	setArgMatrix(k, 4, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
@@ -413,11 +427,16 @@ func (m *opencl32) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 // Sum method calculates the sum of the values in the matrix
 func (m *opencl32) Sum() float64 {
 	var sum float32
-	err := scl.Run(hw, sw[sumKernel], 1, 1, " %a %b %w ",
-		dSize, &m.dims, m.buf, wSize, &sum)
+	res := scl.NewBuffer(hw, cl.MEM_WRITE_ONLY, wSize, &sum)
+	defer res.Release()
+	k := sw[sumKernel]
+	setArgMatrix(k, 0, m)
+	k.SetArgBuffer(2, res)
+	err := k.EnqueueKernel(hw, 1, 1, true)
 	if err != nil {
 		panic(err)
 	}
+	res.Read(hw)
 	return float64(sum)
 }
 
@@ -425,8 +444,10 @@ func (m *opencl32) Sum() float64 {
 func (m *opencl32) MaxCol(in Matrix) Matrix {
 	a := in.(*opencl32)
 	m.reshape(a.rows, 1, false)
-	err := scl.Run(hw, sw[maxColKernel], m.Rows(), 1, " %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &m.dims, m.buf)
+	k := sw[maxColKernel]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, m)
+	err := k.EnqueueKernel(hw, m.Rows(), 1, false)
 	if err != nil {
 		panic(err)
 	}
@@ -437,8 +458,10 @@ func (m *opencl32) MaxCol(in Matrix) Matrix {
 func (m *opencl32) Norm(in Matrix) Matrix {
 	a := in.(*opencl32)
 	m.reshape(a.rows, a.cols, false)
-	err := scl.Run(hw, sw[normKernel], m.Rows(), 1, " %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &m.dims, m.buf)
+	k := sw[normKernel]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, m)
+	err := k.EnqueueKernel(hw, m.Rows(), 1, false)
 	if err != nil {
 		panic(err)
 	}
@@ -469,8 +492,10 @@ func NewUnaryCL(text string) UnaryCL {
 func (fn UnaryCL) Apply(in, out Matrix) Matrix {
 	a, b := in.(*opencl32), out.(*opencl32)
 	b.reshape(a.rows, a.cols, false)
-	err := scl.Run(hw, fn.Software, b.Rows(), b.Cols(), " %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &b.dims, b.buf)
+	k := fn.Software
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, b)
+	err := k.EnqueueKernel(hw, b.Rows(), b.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
@@ -501,10 +526,32 @@ func NewBinaryCL(text string) BinaryCL {
 func (fn BinaryCL) Apply(m1, m2, out Matrix) Matrix {
 	checkEqualSize("binary64:Apply", m1, m2, out)
 	a, b, m := m1.(*opencl32), m2.(*opencl32), out.(*opencl32)
-	err := scl.Run(hw, fn.Software, b.Rows(), b.Cols(), " %a %b %a %b %a %b ",
-		dSize, &a.dims, a.buf, dSize, &b.dims, b.buf, dSize, &m.dims, m.buf)
+	k := fn.Software
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, b)
+	setArgMatrix(k, 4, m)
+	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
 	if err != nil {
 		panic(err)
 	}
 	return b
+}
+
+// utils
+func transCL(a, b *opencl32, atrans, btrans bool) (ac, ar, bc, br int32, kernel int) {
+	ac, ar, bc, br = a.cols, a.rows, b.cols, b.rows
+	if atrans {
+		ac, ar = ar, ac
+		kernel++
+	}
+	if btrans {
+		bc, br = br, bc
+		kernel += 2
+	}
+	return
+}
+
+func setArgMatrix(k *scl.Software, argc uint32, m *opencl32) {
+	k.SetArg(argc, dSize, unsafe.Pointer(&m.dims))
+	k.SetArgBuffer(argc+1, m.buf)
 }

@@ -60,6 +60,21 @@ func (s *Software) Release() {
 	cl.ReleaseProgram(s.Program)
 }
 
+// SetArg method sets an argument to the kernel
+func (s *Software) SetArg(argc uint32, size uint64, ptr unsafe.Pointer) {
+	err := cl.SetKernelArg(s.Kernel, argc, size, ptr)
+	if err != cl.SUCCESS {
+		panic(cl.ErrToStr(err))
+	}
+}
+
+func (s *Software) SetArgBuffer(argc uint32, b *Buffer) {
+	err := cl.SetKernelArg(s.Kernel, argc, 8, unsafe.Pointer(&b.Buf))
+	if err != cl.SUCCESS {
+		panic(cl.ErrToStr(err))
+	}
+}
+
 // The Run function launches a kernel with the given argument list.
 // The format string has a printf style list describing the type of each argument:
 //
@@ -86,7 +101,7 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 				b := NewBuffer(h, cl.MEM_READ_ONLY, size, args[p+1])
 				defer b.Release()
 				b.Write(h)
-				err = b.setKernelArg(s, argc)
+				s.SetArgBuffer(argc, b)
 				argc++
 				p += 2
 			case 'w':
@@ -95,7 +110,7 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 				b := NewBuffer(h, cl.MEM_WRITE_ONLY, size, args[p+1])
 				defer b.Release()
 				outBuf = append(outBuf, b)
-				err = b.setKernelArg(s, argc)
+				s.SetArgBuffer(argc, b)
 				argc++
 				p += 2
 			case 'R':
@@ -105,7 +120,7 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 				defer b.Release()
 				b.Write(h)
 				outBuf = append(outBuf, b)
-				err = b.setKernelArg(s, argc)
+				s.SetArgBuffer(argc, b)
 				argc++
 				p += 2
 			case 'a':
@@ -117,7 +132,7 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 			case 'b':
 				b := args[p].(*Buffer)
 				//fmt.Println("arg[b]", argc, b)
-				err = b.setKernelArg(s, argc)
+				s.SetArgBuffer(argc, b)
 				argc++
 				p++
 			case 'N':
@@ -137,20 +152,30 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 
 	// enqueue the kernel
 	//fmt.Println("enqueue kernel")
-	groupSize := [2]uint64{uint64(workSizeX), uint64(workSizeY)}
-	err = cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, 2, nil, &groupSize[0], nil, 0, nil, nil)
-	if err != cl.SUCCESS {
-		return errors.New(cl.ErrToStr(err))
-	}
-	err = cl.Finish(h.Queue)
-	if err != cl.SUCCESS {
-		return errors.New(cl.ErrToStr(err))
+	if err := s.EnqueueKernel(h, workSizeX, workSizeY, true); err != nil {
+		return err
 	}
 
 	// read the output
 	//fmt.Println("read output buffers")
 	for _, b := range outBuf {
 		err = b.Read(h)
+		if err != cl.SUCCESS {
+			return errors.New(cl.ErrToStr(err))
+		}
+	}
+	return nil
+}
+
+// Enqueue kernel method runs an NDRange kernel
+func (s *Software) EnqueueKernel(h *Hardware, wx, wy int, wait bool) error {
+	groupSize := [2]uint64{uint64(wx), uint64(wy)}
+	err := cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, 2, nil, &groupSize[0], nil, 0, nil, nil)
+	if err != cl.SUCCESS {
+		return errors.New(cl.ErrToStr(err))
+	}
+	if wait {
+		err = cl.Finish(h.Queue)
 		if err != cl.SUCCESS {
 			return errors.New(cl.ErrToStr(err))
 		}

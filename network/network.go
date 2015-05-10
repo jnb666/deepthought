@@ -79,6 +79,7 @@ type Network struct {
 	Nodes        []Layer
 	Layers       int
 	BatchSize    int
+	Verbose      bool
 	classes      blas.Matrix
 	out2class    blas.UnaryFunction
 	checkEvery   int
@@ -110,6 +111,7 @@ func (n *Network) Release() {
 		layer.Release()
 	}
 	n.classes.Release()
+	blas.Release()
 }
 
 // String method returns a printable representation of the network.
@@ -158,7 +160,7 @@ func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
 	totalError := new(mplot.RunningStat)
 	classError := new(mplot.RunningStat)
 	for i, batch := range rand.Perm(n.testBatches) {
-		if i > 0 && i%25 == 0 {
+		if n.Verbose && i > 0 && i%10 == 0 {
 			fmt.Printf("\rtest batch: %d/%d        ", i+1, n.testBatches)
 		}
 		// get cost
@@ -267,7 +269,7 @@ func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(
 		nbatch := len(d.Train.Input)
 		if nbatch > 1 {
 			for i, batch := range rand.Perm(nbatch) {
-				if i > 0 && i%10 == 0 {
+				if n.Verbose && i > 0 && i%5 == 0 {
 					fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
 				}
 				n.TrainStep(d.Train.Input[batch], d.Train.Output[batch], learnRate, s, batch)

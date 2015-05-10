@@ -31,6 +31,7 @@ type Matrix interface {
 	Release()
 	Copy(m Matrix) Matrix
 	Reshape(rows, cols int, shrink bool) Matrix
+	Set(val float64) Matrix
 	Load(Ordering, ...float64) Matrix
 	Data(Ordering) []float64
 	Col(col1, col2 int) Matrix
@@ -73,6 +74,13 @@ func New(rows, cols int) (m Matrix) {
 		panic("matrix implementation is not set - call init first")
 	}
 	return
+}
+
+// Release function is called at shutdown to release any resources
+func Release() {
+	if implementation == OpenCL32 {
+		releaseCL()
+	}
 }
 
 // UnaryFunction interface type represents a function which can be applied elementwise to a matrix
