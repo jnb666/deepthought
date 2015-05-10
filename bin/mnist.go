@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	_ "github.com/jnb666/deepthought/data/mnist"
 	"github.com/jnb666/deepthought/network"
 )
 
 var (
-	threshold = 0.001
+	threshold = 0.0065
 	maxEpoch  = 50
 	learnRate = 3.0
 	batchSize = 100
@@ -18,6 +19,7 @@ var (
 
 // load the data and setup the network with one hidden layer
 func setup() (*data.Dataset, *network.Network) {
+	network.Init(blas.OpenCL32)
 	d, err := data.Load("mnist", samples, batchSize)
 	checkErr(err)
 
@@ -34,7 +36,7 @@ func setup() (*data.Dataset, *network.Network) {
 		}
 		net.CheckGradient(1, 1e-6, 8, 1.5)
 	}
-	net.TestBatches(50)
+	net.TestBatches(100)
 	logEvery = 1
 	return d, net
 }

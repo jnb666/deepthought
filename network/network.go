@@ -12,7 +12,19 @@ import (
 )
 
 const (
-	epsilon = 1e-5
+	epsilon = 1e-4
+)
+
+var (
+	Debug = false
+)
+
+// Standard activation functions
+var (
+	Linear  = Activation{linear{}, nil}
+	Sigmoid Activation
+	Tanh    Activation
+	Softmax Activation
 )
 
 // Activation type represents the activation function and derivative
@@ -21,30 +33,44 @@ type Activation struct {
 	Deriv blas.UnaryFunction
 }
 
-// Standard activation functions
-var (
-	Linear  = Activation{linear{}, nil}
-	Sigmoid = Activation{blas.Unary64(sigmoid), blas.Unary64(dsigmoid)}
-	Tanh    = Activation{blas.Unary64(math.Tanh), blas.Unary64(dtanh)}
-	Softmax = Activation{softmax{}, nil}
-)
-
-func sigmoid(x float64) float64 { return 1 / (1 + math.Exp(-x)) }
-
-func dsigmoid(x float64) float64 { y := sigmoid(x); return y * (1 - y) }
-
-func dtanh(x float64) float64 { y := math.Tanh(x); return 1 - y*y }
+// Init function initialises the package and set the matrix implementation.
+func Init(imp blas.Impl) {
+	blas.Init(imp)
+	if imp == blas.OpenCL32 {
+		Sigmoid = Activation{
+			Func:  blas.NewUnaryCL("1.f / (1.f + exp(-x))"),
+			Deriv: blas.NewUnaryCL("x * (1.f - x)"),
+		}
+		Tanh = Activation{
+			Func:  blas.NewUnaryCL("tanh(x)"),
+			Deriv: blas.NewUnaryCL("1.f - x*x"),
+		}
+		Softmax = Activation{
+			Func: softmax{fn: blas.NewUnaryCL("exp(x)")},
+		}
+	} else {
+		Sigmoid = Activation{
+			Func:  blas.Unary64(func(x float64) float64 { return 1 / (1 + math.Exp(-x)) }),
+			Deriv: blas.Unary64(func(x float64) float64 { return x * (1 - x) }),
+		}
+		Tanh = Activation{
+			Func:  blas.Unary64(math.Tanh),
+			Deriv: blas.Unary64(func(x float64) float64 { return 1 - x*x }),
+		}
+		Softmax = Activation{
+			Func: softmax{fn: blas.Unary64(math.Exp)},
+		}
+	}
+}
 
 type linear struct{}
 
-func (linear) Apply(x, y blas.Matrix) blas.Matrix {
-	return y.Copy(x)
-}
+func (linear) Apply(x, y blas.Matrix) blas.Matrix { return y.Copy(x) }
 
-type softmax struct{}
+type softmax struct{ fn blas.UnaryFunction }
 
-func (softmax) Apply(x, y blas.Matrix) blas.Matrix {
-	blas.Unary64(math.Exp).Apply(x, y)
+func (s softmax) Apply(x, y blas.Matrix) blas.Matrix {
+	s.fn.Apply(x, y)
 	return y.Norm(y)
 }
 
@@ -75,6 +101,15 @@ func NewNetwork(samples int) *Network {
 func (n *Network) Add(l Layer) {
 	n.Nodes = append(n.Nodes, l)
 	n.Layers++
+}
+
+// Release method frees up any resources used by the network.
+func (n *Network) Release() {
+	fmt.Println("release resources")
+	for _, layer := range n.Nodes {
+		layer.Release()
+	}
+	n.classes.Release()
 }
 
 // String method returns a printable representation of the network.
@@ -123,7 +158,7 @@ func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
 	totalError := new(mplot.RunningStat)
 	classError := new(mplot.RunningStat)
 	for i, batch := range rand.Perm(n.testBatches) {
-		if n.testBatches > 1 {
+		if i > 0 && i%25 == 0 {
 			fmt.Printf("\rtest batch: %d/%d        ", i+1, n.testBatches)
 		}
 		// get cost
@@ -197,6 +232,9 @@ func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 			diff.SetFormat("%11.8f")
 			fmt.Printf("*** WARNING *** GRADIENTS LOOK WRONG!\n%s\n%s\n%s\n", grad, proj, diff)
 			ok = false
+			grad.Release()
+			proj.Release()
+			diff.Release()
 		}
 	}
 	return
@@ -229,7 +267,9 @@ func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(
 		nbatch := len(d.Train.Input)
 		if nbatch > 1 {
 			for i, batch := range rand.Perm(nbatch) {
-				fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
+				if i > 0 && i%10 == 0 {
+					fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
+				}
 				n.TrainStep(d.Train.Input[batch], d.Train.Output[batch], learnRate, s, batch)
 			}
 		} else {

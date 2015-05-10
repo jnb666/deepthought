@@ -96,12 +96,12 @@ func (s *Stats) String() string {
 	if s.Test.Error.Len() > 0 {
 		str += fmt.Sprint("   test ", s.Test)
 	}
-	str += fmt.Sprint("   time ", time.Since(s.StartEpoch))
+	str += fmt.Sprintf("   time %.3gs", time.Since(s.StartEpoch).Seconds())
 	return str
 }
 
 func (d StatsData) String() string {
-	return fmt.Sprintf("%.3f %4.1f%%", d.Error.Last(), 100*d.ClassError.Last())
+	return fmt.Sprintf("%.4f %4.1f%%", d.Error.Last(), 100*d.ClassError.Last())
 }
 
 // Update method calculates the error and updates the stats.

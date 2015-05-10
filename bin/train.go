@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/jnb666/deepthought/blas"
+	"os"
+	"os/signal"
+	"runtime"
+
 	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/mplot"
 	"github.com/jnb666/deepthought/network"
-	"os"
-	"runtime"
 )
 
 const (
@@ -65,8 +66,8 @@ func train(net *network.Network, data *data.Dataset, s *network.Stats) {
 			status = "**FAILED **"
 			failed++
 		}
-		fmt.Printf("%s  epochs=%4d  run time=%.3f  reg error=%.3f  class error=%.3f\n",
-			status, epoch, s.RunTime.Last(), s.RegError.Last(), s.ClsError.Last())
+		fmt.Printf("%s  epochs=%4d  run time=%.2gs  reg error=%.4f  class error=%.1f%%\n",
+			status, epoch, s.RunTime.Last(), s.RegError.Last(), 100*s.ClsError.Last())
 		if debug {
 			fmt.Println(net)
 			//fmt.Println(net.FeedForward(data.Train.Input))
@@ -116,12 +117,20 @@ func main() {
 	if !batch {
 		runtime.LockOSThread()
 	}
-	blas.Init(blas.Native64)
 
 	// setup the network
 	network.SeedRandom(seed)
-	stats := network.NewStats(maxEpoch, trainRuns)
 	data, net := setup()
+	stats := network.NewStats(maxEpoch, trainRuns)
+
+	// run cleanup handler on exit
+	c := make(chan os.Signal, 10)
+	signal.Notify(c, os.Interrupt)
+	go func() {
+		<-c
+		net.Release()
+		os.Exit(1)
+	}()
 
 	if batch {
 		train(net, data, stats)
@@ -134,4 +143,5 @@ func main() {
 			window.Draw(rows, cols, plt...)
 		}
 	}
+	net.Release()
 }

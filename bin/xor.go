@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	_ "github.com/jnb666/deepthought/data/xor"
 	"github.com/jnb666/deepthought/network"
@@ -15,6 +16,7 @@ var (
 
 // load the data and setup the network with one hidden layer
 func setup() (*data.Dataset, *network.Network) {
+	network.Init(blas.OpenCL32)
 	fmt.Printf("XOR DATASET: [2,2,1] layers with quadratic cost and tanh activation, eta=%.g\n\n", learnRate)
 	d, err := data.Load("xor", 0, 0)
 	checkErr(err)

@@ -12,6 +12,7 @@ const (
 	none Impl = iota
 	Native32
 	Native64
+	OpenCL32
 )
 
 // Switch for column major or row major data represntation
@@ -27,6 +28,7 @@ type Matrix interface {
 	Rows() int
 	Cols() int
 	Size() int
+	Release()
 	Copy(m Matrix) Matrix
 	Reshape(rows, cols int, shrink bool) Matrix
 	Load(Ordering, ...float64) Matrix
@@ -36,8 +38,8 @@ type Matrix interface {
 	Scale(s float64) Matrix
 	Add(a, b Matrix, sc float64) Matrix
 	Cmp(a, b Matrix, epsilon float64) Matrix
-	Mul(a, b Matrix, aTrans, bTrans, outTrans bool) Matrix
-	MulElem(a, b Matrix) Matrix
+	Mul(a, b Matrix, aTrans, bTrans bool) Matrix
+	MulElem(a, b Matrix, aTrans, bTrans bool) Matrix
 	Sum() float64
 	MaxCol(m Matrix) Matrix
 	Norm(m Matrix) Matrix
@@ -48,6 +50,9 @@ type Matrix interface {
 // Init function is called at setup time to select the implementation
 func Init(imp Impl) {
 	implementation = imp
+	if implementation == OpenCL32 {
+		initCL()
+	}
 }
 
 // Implementation function returns the current implementation
@@ -62,6 +67,8 @@ func New(rows, cols int) (m Matrix) {
 		m = newnative32(rows, cols)
 	case Native64:
 		m = newnative64(rows, cols)
+	case OpenCL32:
+		m = newopencl32(rows, cols)
 	default:
 		panic("matrix implementation is not set - call init first")
 	}

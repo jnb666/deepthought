@@ -10,7 +10,9 @@ import (
 const maxEpoch = 200
 
 func init() {
-	blas.Init(blas.Native32)
+	//Debug = true
+	//Init(blas.Native32)
+	Init(blas.OpenCL32)
 }
 
 func createNetwork(samples int) (net *Network, s *data.Dataset, err error) {
@@ -29,6 +31,7 @@ func TestNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer net.Release()
 	t.Log(net)
 }
 
@@ -37,6 +40,7 @@ func TestFeedForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer net.Release()
 	t.Log(net)
 	t.Logf("input:\n%s\n", d.Test.Input[0])
 	output := net.FeedForward(d.Test.Input[0])
@@ -51,6 +55,7 @@ func TestTrain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer net.Release()
 	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
 	t.Log(net)

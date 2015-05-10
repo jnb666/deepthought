@@ -20,6 +20,8 @@ func new{{.Struct}}(rows, cols int) Matrix {
 	}
 }
 
+func (m *{{.Struct}}) Release() {}
+
 // accessors
 func (m *{{.Struct}}) Rows() int { return m.rows }
 
@@ -183,13 +185,33 @@ func (m *{{.Struct}}) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 	return m
 }
 
+func trans{{.Struct}}(a, b *{{.Struct}}, atrans, btrans bool) (ac, ar, bc, br int, aix, bix func(r, c int)int) {
+	ac, ar, bc, br = a.cols, a.rows, b.cols, b.rows
+	aix = func(r, c int) int { return r*a.stride + c }
+	bix = func(r, c int) int { return r*b.stride + c }
+	if atrans {
+		ac, ar = a.rows, a.cols
+		aix = func(r, c int) int { return c*a.stride + r }
+	}
+	if btrans {
+		bc, br = b.rows, b.cols
+		bix = func(r, c int) int { return c*b.stride + r }
+	}
+	return
+}
+
 // MulElem method performs element wise multiplication of the two input matrices and puts the output in m.
-func (m *{{.Struct}}) MulElem(m1, m2 Matrix) Matrix {
-	checkEqualSize("blas:MulElem", m1, m2, m)
+// If trans1, trans2 flag is set then input matrices are transposed first.
+func (m *{{.Struct}}) MulElem(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
-	for row := 0; row < m.rows; row++ {
-		for col := 0; col < m.cols; col++ {
-			m.set(row, col, a.at(row, col) * b.at(row, col))
+	acols, arows, bcols, brows, aix, bix := trans{{.Struct}}(a, b, trans1, trans2)
+	if acols != bcols || arows != brows {
+		panic("blas:MulElem - mismatch in no. of rows and columns in input matrices")
+	}
+	m.Reshape(arows, acols, true)
+	for row := 0; row < arows; row++ {
+		for col := 0; col < acols; col++ {
+			m.set(row, col, a.data[aix(row, col)] * b.data[bix(row, col)])
 		}
 	}
 	return m
@@ -197,45 +219,20 @@ func (m *{{.Struct}}) MulElem(m1, m2 Matrix) Matrix {
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
 // If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *{{.Struct}}) Mul(m1, m2 Matrix, trans1, trans2, outTrans bool) Matrix {
+func (m *{{.Struct}}) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
-	acols, arows, bcols, brows := a.cols, a.rows, b.cols, b.rows
-	aix := func(row, k int) int { return row*a.stride + k }
-	bix := func(col, k int) int { return k*b.stride + col }
-	if trans1 {
-		acols, arows = a.rows, a.cols
-		aix = func(row, k int) int { return k*a.stride + row }
-	}
-	if trans2 {
-		bcols, brows = b.rows, b.cols
-		bix = func(col, k int) int { return col*b.stride + k }
-	}
+	acols, arows, bcols, brows, aix, bix := trans{{.Struct}}(a, b, trans1, trans2)
 	if acols != brows {
 		panic("blas:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	if outTrans {
-		m.Reshape(bcols, arows, false)
-		m.stride = arows
-		for row := 0; row < arows; row++ {
-			for col := 0; col < bcols; col++ {
-				sum := {{.Type}}(0)
-				for k := 0; k < acols; k++ {
-					sum += a.data[aix(row, k)] * b.data[bix(col, k)]
-				}
-				m.set(col, row, sum)
+	m.Reshape(arows, bcols, true)
+	for row := 0; row < arows; row++ {
+		for col := 0; col < bcols; col++ {
+			sum := {{.Type}}(0)
+			for k := 0; k < acols; k++ {
+				sum += a.data[aix(row, k)] * b.data[bix(k, col)]
 			}
-		}
-	} else {
-		m.Reshape(arows, bcols, false)
-		m.stride = bcols		
-		for row := 0; row < arows; row++ {
-			for col := 0; col < bcols; col++ {
-				sum := {{.Type}}(0)
-				for k := 0; k < acols; k++ {
-					sum += a.data[aix(row, k)] * b.data[bix(col, k)]
-				}
-				m.set(row, col, sum)
-			}
+			m.set(row, col, sum)
 		}
 	}
 	return m
