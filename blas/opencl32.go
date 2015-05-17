@@ -12,8 +12,9 @@ const (
 	dSize     = 16 // dims header size
 	padSize   = 32 // pad matrix to this size
 	trBlock   = 16 // block size for transpose kernel
-	block     = 32 // block size cols for matrix muliply kernel
-	perThread = 8  // no. of lines processed by each thread
+	blockK    = 16 // block size K for matrix muliply kernel
+	block     = 32 // block size MxN for matrix muliply kernel
+	perThread = 4  // no. of lines processed by each thread ** must be at least block/blockK **
 )
 
 var (
@@ -47,7 +48,7 @@ func initCL() {
 	hw = scl.Devices().Select(0)
 	fmt.Println("Init OpenCL:", hw)
 	sw = make([]*scl.Software, numKernels)
-	opts := fmt.Sprintf("-D TRBLK=%d -D BLK=%d -D WPT=%d", trBlock, block, perThread)
+	opts := fmt.Sprintf("-D TRBLK=%d -D TS=%d -D TSK=%d -D WPT=%d", trBlock, block, blockK, perThread)
 	for i := range sw {
 		if sw[i], err = scl.Compile(hw, srcHead+source, name[i], opts); err != nil {
 			panic(fmt.Sprintf("error compiling %s : %s", name[i], err))
@@ -305,8 +306,12 @@ func (m *opencl32) Mul(m1, m2 Matrix) Matrix {
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
+	// local mem kernel
 	gSize := []uint64{uint64(pad(m.cols)) / perThread, uint64(pad(m.rows))}
 	lSize := []uint64{block / perThread, block}
+	// register mem kernel
+	//gSize := []uint64{uint64(pad(m.cols)) / 8, uint64(pad(m.rows)) / 8}
+	//lSize := []uint64{16, 16}
 	//fmt.Printf("global size is %+v local size is %+v\n", gSize, lSize)
 	err := k.EnqueueKernel(hw, gSize, lSize, false)
 	if err != nil {

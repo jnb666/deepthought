@@ -113,37 +113,71 @@ __kernel void transpose(const int4 ad, const __global float* a, const int4 md, _
 	}
 }
 
-#define RTS (BLK/WPT)
+#define RTS (TS/WPT)
+#define LPT (TSK*WPT/TS)
 
 __kernel void mul(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
 		const int4 md, __global float* m) {
 	const int tx = get_local_id(0);
 	const int ty = get_local_id(1);
-	const int col = BLK*get_group_id(0) + tx;
-	const int row = BLK*get_group_id(1) + ty;
-	__local float asub[BLK][BLK+1];
-	__local float bsub[BLK][BLK+1];
+	const int col = TS*get_group_id(0) + tx;
+	const int row = TS*get_group_id(1) + ty;
+	const int arow = TS*get_group_id(1) + ty;
+	const int brow = TS*get_group_id(0) + ty;
+
+	__local float asub[TS][TSK+2];
+	__local float bsub[TS][TSK+2];
 
 	float sum[WPT] = {};
-	const int ntiles = ad.w/BLK;
+	const int ntiles = ad.w/TSK;
 
 	for (int t = 0; t < ntiles; t++) {
-		for (int w = 0; w < WPT; w++) {
-			int ix = BLK*t + tx + w*RTS;
-			asub[ty][tx+w*RTS] = a[P(ad, BLK*get_group_id(1)+ty, ix)];
-			bsub[ty][tx+w*RTS] = b[P(bd, BLK*get_group_id(0)+ty, ix)];
+		for (int l = 0; l < LPT; l++) {
+			int xcol = TSK*t + tx + l*RTS;
+			asub[ty][tx+l*RTS] = a[P(ad, arow, xcol)];
+			bsub[ty][tx+l*RTS] = b[P(bd, brow, xcol)];
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 
-		for (int k = 0; k < BLK; k++) {
+		for (int k = 0; k < TSK; k++) {
 			for (int w = 0; w < WPT; w++) {	
-				sum[w] += asub[ty][k] * bsub[tx+w*RTS][k];
+				sum[w] += asub[ty][k] * bsub[tx+w*RTS][k];		
 			}
-        }
+       	}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
 	for (int w = 0; w < WPT; w++) {
 		m[P(md, row, col+w*RTS)] = sum[w];
 	}
 }
+
+#define RS 8
+#define Q(d, r, c) (d.z+d.w*(r)/RS+(c))
+#define vdot(a, b) (a.s0*b.s0+a.s1*b.s1+a.s2*b.s2+a.s3*b.s3+a.s4*b.s4+a.s5*b.s5+a.s6*b.s6+a.s7*b.s7)
+#define Vec float8
+
+__kernel void mul0(const int4 ad, const __global Vec* a, const int4 bd, const __global Vec* b,
+		const int4 md, __global Vec* m) {
+	ARG
+    Vec areg[RS];
+    Vec breg[RS];
+    float acc[RS][RS] = {};
+
+    const int ntiles = ad.w/RS;
+    for (int t = 0; t < ntiles; t++) {
+        for (int y = 0; y < RS; y++) {
+        	areg[y] = a[Q(ad, row*RS+y, t)];
+         	breg[y] = b[Q(bd, col*RS+y, t)];
+        }
+        for (int y=0; y<RS; y++) {
+            for (int x=0; x<RS; x++) {
+                acc[x][y] += vdot(areg[x], breg[y]);
+            }
+        }
+    }
+    for (int y=0; y<RS; y++) {
+        m[Q(md, RS*row+y, col)] = vload8(0, acc[y]);
+    }
+}
+
 `
