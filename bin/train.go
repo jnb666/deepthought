@@ -117,6 +117,7 @@ func main() {
 	if !batch {
 		runtime.LockOSThread()
 	}
+	network.Debug = debug
 
 	// setup the network
 	network.SeedRandom(seed)

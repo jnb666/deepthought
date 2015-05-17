@@ -100,6 +100,18 @@ func (m *native64) Copy(in Matrix) Matrix {
 	return m
 }
 
+// Transpose method returns a transposed copy of the input matrix
+func (m *native64) Transpose(in Matrix) Matrix {
+	a := in.(*native64)
+	m.Reshape(a.cols, a.rows, true)
+	for row := 0; row < m.rows; row++ {
+		for col := 0; col < m.cols; col++ {
+			m.set(row, col, a.at(col, row))
+		}
+	}
+	return m
+}
+
 // Reshape method changes the dimensions without altering the data
 func (m *native64) Reshape(rows, cols int, shrink bool) Matrix {
 	if m.Size() < rows*cols {
@@ -187,52 +199,32 @@ func (m *native64) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 	return m
 }
 
-func transnative64(a, b *native64, atrans, btrans bool) (ac, ar, bc, br int, aix, bix func(r, c int)int) {
-	ac, ar, bc, br = a.cols, a.rows, b.cols, b.rows
-	aix = func(r, c int) int { return r*a.stride + c }
-	bix = func(r, c int) int { return r*b.stride + c }
-	if atrans {
-		ac, ar = a.rows, a.cols
-		aix = func(r, c int) int { return c*a.stride + r }
-	}
-	if btrans {
-		bc, br = b.rows, b.cols
-		bix = func(r, c int) int { return c*b.stride + r }
-	}
-	return
-}
-
 // MulElem method performs element wise multiplication of the two input matrices and puts the output in m.
 // If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *native64) MulElem(m1, m2 Matrix, trans1, trans2 bool) Matrix {
+func (m *native64) MulElem(m1, m2 Matrix) Matrix {
+	checkEqualSize("blas:Cmp", m1, m2, m)
 	a, b := m1.(*native64), m2.(*native64)
-	acols, arows, bcols, brows, aix, bix := transnative64(a, b, trans1, trans2)
-	if acols != bcols || arows != brows {
-		panic("blas:MulElem - mismatch in no. of rows and columns in input matrices")
-	}
-	m.Reshape(arows, acols, true)
-	for row := 0; row < arows; row++ {
-		for col := 0; col < acols; col++ {
-			m.set(row, col, a.data[aix(row, col)] * b.data[bix(row, col)])
+	for row := 0; row < a.rows; row++ {
+		for col := 0; col < a.cols; col++ {
+			m.set(row, col, a.at(row, col) * b.at(row, col))
 		}
 	}
 	return m
 }
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
-// If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *native64) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
+// Second matrix must be transposed first before input to this routine.
+func (m *native64) Mul(m1, m2 Matrix) Matrix {
 	a, b := m1.(*native64), m2.(*native64)
-	acols, arows, bcols, brows, aix, bix := transnative64(a, b, trans1, trans2)
-	if acols != brows {
+	if a.cols != b.cols {
 		panic("blas:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	m.Reshape(arows, bcols, true)
-	for row := 0; row < arows; row++ {
-		for col := 0; col < bcols; col++ {
+	m.Reshape(a.rows, b.rows, true)
+	for row := 0; row < a.rows; row++ {
+		for col := 0; col < b.rows; col++ {
 			sum := float64(0)
-			for k := 0; k < acols; k++ {
-				sum += a.data[aix(row, k)] * b.data[bix(k, col)]
+			for k := 0; k < a.cols; k++ {
+				sum += a.at(row, k) * b.at(col, k)
 			}
 			m.set(row, col, sum)
 		}

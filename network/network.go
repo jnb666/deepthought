@@ -111,7 +111,6 @@ func (n *Network) Release() {
 		layer.Release()
 	}
 	n.classes.Release()
-	blas.Release()
 }
 
 // String method returns a printable representation of the network.
@@ -129,10 +128,10 @@ func (n *Network) String() string {
 func (n *Network) SetRandomWeights() {
 	for _, layer := range n.Nodes[:n.Layers-1] {
 		w := layer.Weights()
-		nin, nout := w.Cols(), w.Rows()
-		data := make([]float64, nin*nout)
-		for i := range data[:(nin-1)*nout] {
-			data[i] = rand.NormFloat64() / math.Sqrt(float64(nin-1))
+		nin, nout := w.Cols()-1, w.Rows()
+		data := make([]float64, (nin+1)*nout)
+		for i := range data[:nin*nout] {
+			data[i] = rand.NormFloat64() / math.Sqrt(float64(nin))
 		}
 		w.Load(blas.ColMajor, data...)
 	}

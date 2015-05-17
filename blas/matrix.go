@@ -30,6 +30,7 @@ type Matrix interface {
 	Size() int
 	Release()
 	Copy(m Matrix) Matrix
+	Transpose(m Matrix) Matrix
 	Reshape(rows, cols int, shrink bool) Matrix
 	Set(val float64) Matrix
 	Load(Ordering, ...float64) Matrix
@@ -39,8 +40,8 @@ type Matrix interface {
 	Scale(s float64) Matrix
 	Add(a, b Matrix, sc float64) Matrix
 	Cmp(a, b Matrix, epsilon float64) Matrix
-	Mul(a, b Matrix, aTrans, bTrans bool) Matrix
-	MulElem(a, b Matrix, aTrans, bTrans bool) Matrix
+	Mul(a, b Matrix) Matrix
+	MulElem(a, b Matrix) Matrix
 	Sum() float64
 	MaxCol(m Matrix) Matrix
 	Norm(m Matrix) Matrix

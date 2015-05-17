@@ -8,151 +8,18 @@ import (
 )
 
 const (
-	wSize = 4
-	dSize = 16
-)
-
-const (
-	copyKernel = iota
-	setKernel
-	scaleKernel
-	addKernel
-	cmpKernel
-	sumKernel
-	maxColKernel
-	normKernel
-	mulKernel1
-	mulKernel2
-	mulKernel3
-	mulKernel4
-	mulElemKernel1
-	mulElemKernel2
-	mulElemKernel3
-	mulElemKernel4
-	numKernels
+	wSize     = 4  // word size
+	dSize     = 16 // dims header size
+	padSize   = 32 // pad matrix to this size
+	trBlock   = 16 // block size for transpose kernel
+	block     = 32 // block size cols for matrix muliply kernel
+	perThread = 8  // no. of lines processed by each thread
 )
 
 var (
-	hw   *scl.Hardware
-	sw   []*scl.Software
-	name = []string{"copy", "set", "scale", "add", "cmp", "sum", "maxcol", "norm",
-		"mul1", "mul2", "mul3", "mul4", "mulelem1", "mulelem2", "mulelem3", "mulelem4"}
+	hw *scl.Hardware
+	sw []*scl.Software
 )
-
-var srcHead = `
-typedef struct {
-	int rows;
-	int cols;
-	int base;
-	int stride;
-} Dims;
-
-#define ARG int row = get_global_id(0); int col = get_global_id(1);
-
-#define P(d, r, c) (d.base + d.stride*(r) + (c))
-`
-
-var source = `
-__kernel void copy(Dims ad, __global float* a, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = a[P(ad,row,col)];
-}
-
-__kernel void set(float val, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = val;
-}
-
-__kernel void scale(float sc, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] *= sc;
-}
-
-__kernel void add(float sc, Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = a[P(ad,row,col)] + sc*b[P(bd,row,col)]; 
-}
-
-__kernel void cmp(float eps, Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = fabs(a[P(ad,row,col)] - b[P(bd,row,col)]) > eps; 
-}
-
-__kernel void sum(Dims md, __global float* m, __global float* res) {
-	float sum = 0.f;
-	for (int r = 0; r < md.rows; r++) {
-		for (int c = 0; c < md.cols; c++) {
-			sum += m[P(md,r,c)];
-		}
-	}
-	*res = sum;
-}
-
-__kernel void maxcol(Dims ad, __global float* a, Dims md, __global float* m) {
-	int row = get_global_id(0); int maxcol = 0; 
-	float maxval = -1e38f; float v;
-	for (int c = 0; c < ad.cols; c++) {	
-		if ((v = a[P(ad,row,c)]) > maxval) {
-			maxval = v; maxcol = c;
-		}
-	}
-	m[P(md,row,0)] = (float)maxcol;
-}
-
-__kernel void norm(Dims ad, __global float* a, Dims md, __global float* m) {
-	int row = get_global_id(0);
-	float sum = 0.f;
-	for (int c = 0; c < ad.cols; c++) {	
-		sum += a[P(ad,row,c)];
-	}
-	for (int c = 0; c < ad.cols; c++) {	
-		m[P(ad,row,c)] = a[P(ad,row,c)] / sum;
-	}
-}
-
-__kernel void mul1(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	float sum = 0.f;
-	for (int k = 0; k < ad.cols; k++) {
-		sum += a[P(ad,row,k)] * b[P(bd,k,col)];
-	}
-	m[P(md,row,col)] = sum;
-}
-
-__kernel void mul2(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	float sum = 0.f;
-	for (int k = 0; k < ad.rows; k++) {
-		sum += a[P(ad,k,row)] * b[P(bd,k,col)];
-	}
-	m[P(md,row,col)] = sum;
-}
-
-__kernel void mul3(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	float sum = 0.f;
-	for (int k = 0; k < ad.cols; k++) {
-		sum += a[P(ad,row,k)] * b[P(bd,col,k)];
-	}
-	m[P(md,row,col)] = sum;
-}
-
-__kernel void mul4(Dims ad, __global float* a, Dims bd, __global  float* b, Dims md, __global float* m) {
-	ARG	float sum = 0.f;
-	for (int k = 0; k < ad.rows; k++) {
-		sum += a[P(ad,k,row)] * b[P(bd,col,k)];
-	}
-	m[P(md,row,col)] = sum;
-}
-
-__kernel void mulelem1(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = a[P(ad,row,col)] * b[P(bd,row,col)];
-}
-
-__kernel void mulelem2(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = a[P(ad,col,row)] * b[P(bd,row,col)];
-}
-
-__kernel void mulelem3(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = a[P(ad,row,col)] * b[P(bd,col,row)];
-}
-
-__kernel void mulelem4(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG	m[P(md,row,col)] = a[P(ad,col,row)] * b[P(bd,col,row)];
-}
-`
 
 // matrix dimensions
 type dims struct {
@@ -170,15 +37,20 @@ type opencl32 struct {
 	format string
 }
 
+func globalWG(m *opencl32) []uint64 {
+	return []uint64{uint64(m.cols), uint64(m.rows)}
+}
+
 // initialise opencl
 func initCL() {
 	var err error
 	hw = scl.Devices().Select(0)
 	fmt.Println("Init OpenCL:", hw)
 	sw = make([]*scl.Software, numKernels)
+	opts := fmt.Sprintf("-D TRBLK=%d -D BLK=%d -D WPT=%d", trBlock, block, perThread)
 	for i := range sw {
-		if sw[i], err = scl.Compile(hw, srcHead+source, name[i], ""); err != nil {
-			panic(err)
+		if sw[i], err = scl.Compile(hw, srcHead+source, name[i], opts); err != nil {
+			panic(fmt.Sprintf("error compiling %s : %s", name[i], err))
 		}
 	}
 }
@@ -190,13 +62,20 @@ func releaseCL() {
 	hw.Release()
 }
 
+// pad matrix size to even number of blocks
+func pad(n int32) int32 {
+	return padSize * (1 + (n-1)/padSize)
+}
+
 // constructor
 func newopencl32(rows, cols int) Matrix {
-	hostData := make([]float32, rows*cols)
-	buffer := scl.NewBuffer(hw, cl.MEM_READ_WRITE, rows*cols*wSize, hostData)
+	nrows, ncols := int32(rows), int32(cols)
+	prows, pcols := pad(nrows), pad(ncols)
+	hostData := make([]float32, prows*pcols)
+	buffer := scl.NewBuffer(hw, cl.MEM_READ_WRITE, int(prows*pcols*wSize), hostData)
 	buffer.Write(hw)
 	return &opencl32{
-		dims:   dims{rows: int32(rows), cols: int32(cols), stride: int32(cols)},
+		dims:   dims{rows: nrows, cols: ncols, stride: pcols},
 		buf:    buffer,
 		data:   hostData,
 		format: "%8.4f",
@@ -283,7 +162,7 @@ func (m *opencl32) reshape(rows, cols int32, shrink bool) Matrix {
 	}
 	m.rows, m.cols = rows, cols
 	if shrink || m.stride < m.cols {
-		m.stride = m.cols
+		m.stride = pad(m.cols)
 	}
 	return m
 }
@@ -317,7 +196,22 @@ func (m *opencl32) Copy(in Matrix) Matrix {
 	k := sw[copyKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+// Transpose method returns a transposed copy of the input matrix
+func (m *opencl32) Transpose(in Matrix) Matrix {
+	a := in.(*opencl32)
+	m.reshape(a.cols, a.rows, true)
+	k := sw[transKernel]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, m)
+	sz := uint64(max(a.rows, a.cols))
+	err := k.EnqueueKernel(hw, []uint64{sz, sz}, []uint64{trBlock, trBlock}, false)
 	if err != nil {
 		panic(err)
 	}
@@ -330,7 +224,7 @@ func (m *opencl32) Set(val float64) Matrix {
 	k := sw[setKernel]
 	k.SetArg(0, wSize, unsafe.Pointer(&value))
 	setArgMatrix(k, 1, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -343,7 +237,7 @@ func (m *opencl32) Scale(s float64) Matrix {
 	k := sw[scaleKernel]
 	k.SetArg(0, wSize, unsafe.Pointer(&sc))
 	setArgMatrix(k, 1, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -360,7 +254,7 @@ func (m *opencl32) Add(m1, m2 Matrix, s float64) Matrix {
 	setArgMatrix(k, 1, a)
 	setArgMatrix(k, 3, b)
 	setArgMatrix(k, 5, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -377,7 +271,7 @@ func (m *opencl32) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 	setArgMatrix(k, 1, a)
 	setArgMatrix(k, 3, b)
 	setArgMatrix(k, 5, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -385,19 +279,14 @@ func (m *opencl32) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
 }
 
 // MulElem method performs element wise multiplication of the two input matrices and puts the output in m.
-// If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *opencl32) MulElem(m1, m2 Matrix, trans1, trans2 bool) Matrix {
+func (m *opencl32) MulElem(m1, m2 Matrix) Matrix {
+	checkEqualSize("blas:Cmp", m1, m2, m)
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	ac, ar, bc, br, knum := transCL(a, b, trans1, trans2)
-	if ac != bc || ar != br {
-		panic("blas:MulElem - mismatch in no. of rows and columns in input matrices")
-	}
-	m.reshape(ar, ac, true)
-	k := sw[mulElemKernel1+knum]
+	k := sw[mulElemKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -405,19 +294,21 @@ func (m *opencl32) MulElem(m1, m2 Matrix, trans1, trans2 bool) Matrix {
 }
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
-// If trans1, trans2 flag is set then input matrices are transposed first.
-func (m *opencl32) Mul(m1, m2 Matrix, trans1, trans2 bool) Matrix {
+// Second matrix must be transposed first before input to this routine.
+func (m *opencl32) Mul(m1, m2 Matrix) Matrix {
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	ac, ar, bc, br, knum := transCL(a, b, trans1, trans2)
-	if ac != br {
+	if a.cols != b.cols {
 		panic("blas:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	m.reshape(ar, bc, true)
-	k := sw[mulKernel1+knum]
+	m.reshape(a.rows, b.rows, true)
+	k := sw[mulKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	gSize := []uint64{uint64(pad(m.cols)) / perThread, uint64(pad(m.rows))}
+	lSize := []uint64{block / perThread, block}
+	//fmt.Printf("global size is %+v local size is %+v\n", gSize, lSize)
+	err := k.EnqueueKernel(hw, gSize, lSize, false)
 	if err != nil {
 		panic(err)
 	}
@@ -432,7 +323,7 @@ func (m *opencl32) Sum() float64 {
 	k := sw[sumKernel]
 	setArgMatrix(k, 0, m)
 	k.SetArgBuffer(2, res)
-	err := k.EnqueueKernel(hw, 1, 1, true)
+	err := k.EnqueueKernel(hw, []uint64{1}, nil, true)
 	if err != nil {
 		panic(err)
 	}
@@ -447,7 +338,7 @@ func (m *opencl32) MaxCol(in Matrix) Matrix {
 	k := sw[maxColKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
-	err := k.EnqueueKernel(hw, m.Rows(), 1, false)
+	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -461,7 +352,7 @@ func (m *opencl32) Norm(in Matrix) Matrix {
 	k := sw[normKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
-	err := k.EnqueueKernel(hw, m.Rows(), 1, false)
+	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -472,11 +363,6 @@ func (m *opencl32) Norm(in Matrix) Matrix {
 type UnaryCL struct {
 	*scl.Software
 }
-
-var unarySrc = `
-__kernel void unary(Dims ad, __global float* a, Dims md, __global float* m) {
-	ARG float x = a[P(ad,row,col)];
-`
 
 // NewUnaryCL function compiles a new function of one variable
 func NewUnaryCL(text string) UnaryCL {
@@ -495,7 +381,7 @@ func (fn UnaryCL) Apply(in, out Matrix) Matrix {
 	k := fn.Software
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
-	err := k.EnqueueKernel(hw, b.Rows(), b.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(b), nil, false)
 	if err != nil {
 		panic(err)
 	}
@@ -506,11 +392,6 @@ func (fn UnaryCL) Apply(in, out Matrix) Matrix {
 type BinaryCL struct {
 	*scl.Software
 }
-
-var binarySrc = `
-__kernel void binary(Dims ad, __global float* a, Dims bd, __global float* b, Dims md, __global float* m) {
-	ARG float x = a[P(ad,row,col)]; float y = b[P(bd,row,col)];
-`
 
 // NewUnaryCL function compiles a new function of one variable
 func NewBinaryCL(text string) BinaryCL {
@@ -530,11 +411,18 @@ func (fn BinaryCL) Apply(m1, m2, out Matrix) Matrix {
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
-	err := k.EnqueueKernel(hw, m.Rows(), m.Cols(), false)
+	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
 	}
 	return b
+}
+
+// Wait for any calcs to complete
+func Sync() {
+	if implementation == OpenCL32 {
+		cl.Finish(hw.Queue)
+	}
 }
 
 // utils
@@ -554,4 +442,11 @@ func transCL(a, b *opencl32, atrans, btrans bool) (ac, ar, bc, br int32, kernel 
 func setArgMatrix(k *scl.Software, argc uint32, m *opencl32) {
 	k.SetArg(argc, dSize, unsafe.Pointer(&m.dims))
 	k.SetArgBuffer(argc+1, m.buf)
+}
+
+func max(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
 }

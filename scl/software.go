@@ -152,7 +152,8 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 
 	// enqueue the kernel
 	//fmt.Println("enqueue kernel")
-	if err := s.EnqueueKernel(h, workSizeX, workSizeY, true); err != nil {
+	globalSize := []uint64{uint64(workSizeX), uint64(workSizeY)}
+	if err := s.EnqueueKernel(h, globalSize, nil, true); err != nil {
 		return err
 	}
 
@@ -168,9 +169,13 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 }
 
 // Enqueue kernel method runs an NDRange kernel
-func (s *Software) EnqueueKernel(h *Hardware, wx, wy int, wait bool) error {
-	groupSize := [2]uint64{uint64(wx), uint64(wy)}
-	err := cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, 2, nil, &groupSize[0], nil, 0, nil, nil)
+func (s *Software) EnqueueKernel(h *Hardware, globalSize, localSize []uint64, wait bool) error {
+	var err cl.ErrorCode
+	if localSize != nil {
+		err = cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, uint32(len(globalSize)), nil, &globalSize[0], &localSize[0], 0, nil, nil)
+	} else {
+		err = cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, uint32(len(globalSize)), nil, &globalSize[0], nil, 0, nil, nil)
+	}
 	if err != cl.SUCCESS {
 		return errors.New(cl.ErrToStr(err))
 	}

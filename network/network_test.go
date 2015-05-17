@@ -31,8 +31,8 @@ func TestNetwork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer net.Release()
 	t.Log(net)
+	net.Release()
 }
 
 func TestFeedForward(t *testing.T) {
@@ -40,7 +40,6 @@ func TestFeedForward(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer net.Release()
 	t.Log(net)
 	t.Logf("input:\n%s\n", d.Test.Input[0])
 	output := net.FeedForward(d.Test.Input[0])
@@ -48,6 +47,7 @@ func TestFeedForward(t *testing.T) {
 	if output.Rows() != 10 || output.Cols() != 3 {
 		t.Error("output is wrong size!")
 	}
+	net.Release()
 }
 
 func TestTrain(t *testing.T) {
@@ -55,7 +55,6 @@ func TestTrain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer net.Release()
 	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
 	t.Log(net)
@@ -72,4 +71,5 @@ func TestTrain(t *testing.T) {
 		t.Error("training failed to hit threshold!")
 	}
 	t.Log(net)
+	net.Release()
 }
