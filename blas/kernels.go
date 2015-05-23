@@ -13,11 +13,15 @@ const (
 	normKernel
 	transKernel
 	mulKernel
+	mulATKernel
+	mulBTKernel
+	mulABTKernel
 	mulElemKernel
 	numKernels
 )
 
-var name = []string{"copy", "set", "scale", "add", "cmp", "sum", "maxcol", "norm", "transpose", "mul", "mulelem"}
+var name = []string{"copy", "set", "scale", "add", "cmp", "sum", "maxcol", "norm", "transpose",
+	"mul", "mulAT", "mulBT", "mulABT", "mulelem"}
 
 var srcHead = `
 // Header structure rows=.x cols=.y base=.z stride=.w
@@ -114,70 +118,140 @@ __kernel void transpose(const int4 ad, const __global float* a, const int4 md, _
 }
 
 #define RTS (TS/WPT)
-#define LPT (TSK*WPT/TS)
+
+#define MHEAD __local float asub[TS][TS+1]; __local float bsub[TS][TS+1];\
+	const int tx = get_local_id(0);	const int ty = get_local_id(1);\
+	const int gx = TS*get_group_id(0); const int gy = TS*get_group_id(1);\
+	float asum[WPT*WPT] = {};
+
+#define MDO(code) for (int wy=0; wy<WPT; wy++) for (int wx=0; wx<WPT; wx++) { code; }
+
+#define MPOS int c=(RTS*RTS*w+ty*RTS+tx)%TS; int r=(RTS*RTS*w+ty*RTS+tx)/TS;
+
+#define OPOS int2 pos = oTrans ? (int2)(gx+tx+wx*RTS, gy+ty+wy*RTS) : (int2)(gy+ty+wy*RTS, gx+tx+wx*RTS);
+
+// matrix multiply
+__kernel void mul(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
+		const int4 md, __global float* m, int oTrans) {
+	MHEAD
+	int maxt = ad.w;
+	for (int t = 0; t < maxt; t += TS) {
+		for (int w = 0; w < WPT*WPT; w++) {
+			MPOS
+			asub[r][c] = a[P(ad, gy+r, t+c)];
+			bsub[r][c] = b[P(bd, t+c, gx+r)];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		for (int k = 0; k < TS; k++) {
+			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
+		}
+	}
+	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+}
+
+// a matrix transposed
+__kernel void mulAT(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
+		const int4 md, __global float* m, int oTrans) {
+	MHEAD
+	int maxt = (1 + (ad.x-1)/TS) * TS;
+	for (int t = 0; t < maxt; t += TS) {
+		for (int w = 0; w < WPT*WPT; w++) {
+			MPOS
+			asub[r][c] = a[P(ad, t+c, gy+r)];
+			bsub[r][c] = b[P(bd, t+c, gx+r)];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		for (int k = 0; k < TS; k++) {
+			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
+		}
+	}
+	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+}
+
+// b matrix transposed
+__kernel void mulBT(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
+		const int4 md, __global float* m, int oTrans) {
+	MHEAD
+	int maxt = ad.w;
+	for (int t = 0; t < maxt; t += TS) {
+		for (int w = 0; w < WPT*WPT; w++) {
+			MPOS
+			asub[r][c] = a[P(ad, gy+r, t+c)];
+			bsub[r][c] = b[P(bd, gx+r, t+c)];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		for (int k = 0; k < TS; k++) {
+			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
+		}
+	}
+	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+}
+
+// a and b matrix transposed
+__kernel void mulABT(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
+		const int4 md, __global float* m, int oTrans) {
+	MHEAD
+	int maxt = bd.w;
+	for (int t = 0; t < maxt; t += TS) {
+		for (int w = 0; w < WPT*WPT; w++) {
+			MPOS
+			asub[r][c] = a[P(ad, t+c, gy+r)];
+			bsub[r][c] = b[P(bd, gx+r, t+c)];
+		}
+		barrier(CLK_LOCAL_MEM_FENCE);
+		for (int k = 0; k < TS; k++) {
+			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
+		}
+	}
+	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+}
+`
+
+/* generalised multiply
+#define RTSX (TSX/WPTX)
+#define RTSY (TSY/WPTY)
+#define LPTA ((TSK*TSY)/(RTSX*RTSY))
+#define LPTB ((TSK*TSX)/(RTSX*RTSY))
 
 __kernel void mul(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
 		const int4 md, __global float* m) {
 	const int tx = get_local_id(0);
 	const int ty = get_local_id(1);
-	const int col = TS*get_group_id(0) + tx;
-	const int row = TS*get_group_id(1) + ty;
-	const int arow = TS*get_group_id(1) + ty;
-	const int brow = TS*get_group_id(0) + ty;
+	const int offX = TSX*get_group_id(0);
+	const int offY = TSY*get_group_id(1);
 
-	__local float asub[TS][TSK+2];
-	__local float bsub[TS][TSK+2];
+	__local float asub[TSY][TSK+2];
+	__local float bsub[TSX][TSK+2];
 
-	float sum[WPT] = {};
-	const int ntiles = ad.w/TSK;
+	float sum[WPTY][WPTX] = {};
+	const int base = ty*RTSX + tx;
 
-	for (int t = 0; t < ntiles; t++) {
-		for (int l = 0; l < LPT; l++) {
-			int xcol = TSK*t + tx + l*RTS;
-			asub[ty][tx+l*RTS] = a[P(ad, arow, xcol)];
-			bsub[ty][tx+l*RTS] = b[P(bd, brow, xcol)];
+	for (int t = 0; t < ad.w; t += TSK) {
+		for (int la = 0; la < LPTA*RTSX*RTSY; la += RTSX*RTSY) {
+			int col = (la+base) % TSK;
+			int row = (la+base) / TSK;
+			asub[row][col] = a[P(ad, offY+row, t+col)];
+		}
+		for (int lb = 0; lb < LPTB*RTSX*RTSY; lb += RTSX*RTSY) {
+			int col = (lb+base) % TSK;
+			int row = (lb+base) / TSK;
+			bsub[row][col] = b[P(bd, offX+row, t+col)];
 		}
 		barrier(CLK_LOCAL_MEM_FENCE);
 
 		for (int k = 0; k < TSK; k++) {
-			for (int w = 0; w < WPT; w++) {	
-				sum[w] += asub[ty][k] * bsub[tx+w*RTS][k];		
+			for (int wy = 0; wy < WPTY; wy++) {
+				for (int wx = 0; wx < WPTX; wx++) {
+					sum[wy][wx] += asub[ty+wy*RTSY][k] * bsub[tx+wx*RTSX][k];
+				}
 			}
        	}
 		barrier(CLK_LOCAL_MEM_FENCE);
 	}
-	for (int w = 0; w < WPT; w++) {
-		m[P(md, row, col+w*RTS)] = sum[w];
+	for (int wy = 0; wy < WPTY; wy++) {
+		for (int wx = 0; wx < WPTX; wx++) {
+			m[P(md, offY+ty+wy*RTSY, offX+tx+wx*RTSX)] = sum[wy][wx];
+		}
 	}
 }
-
-#define RS 8
-#define Q(d, r, c) (d.z+d.w*(r)/RS+(c))
-#define vdot(a, b) (a.s0*b.s0+a.s1*b.s1+a.s2*b.s2+a.s3*b.s3+a.s4*b.s4+a.s5*b.s5+a.s6*b.s6+a.s7*b.s7)
-#define Vec float8
-
-__kernel void mul0(const int4 ad, const __global Vec* a, const int4 bd, const __global Vec* b,
-		const int4 md, __global Vec* m) {
-	ARG
-    Vec areg[RS];
-    Vec breg[RS];
-    float acc[RS][RS] = {};
-
-    const int ntiles = ad.w/RS;
-    for (int t = 0; t < ntiles; t++) {
-        for (int y = 0; y < RS; y++) {
-        	areg[y] = a[Q(ad, row*RS+y, t)];
-         	breg[y] = b[Q(bd, col*RS+y, t)];
-        }
-        for (int y=0; y<RS; y++) {
-            for (int x=0; x<RS; x++) {
-                acc[x][y] += vdot(areg[x], breg[y]);
-            }
-        }
-    }
-    for (int y=0; y<RS; y++) {
-        m[Q(md, RS*row+y, col)] = vload8(0, acc[y]);
-    }
-}
-
-`
+*/

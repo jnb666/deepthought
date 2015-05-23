@@ -40,7 +40,7 @@ type Matrix interface {
 	Scale(s float64) Matrix
 	Add(a, b Matrix, sc float64) Matrix
 	Cmp(a, b Matrix, epsilon float64) Matrix
-	Mul(a, b Matrix) Matrix
+	Mul(a, b Matrix, aTrans, bTrans, oTrans bool) Matrix
 	MulElem(a, b Matrix) Matrix
 	Sum() float64
 	MaxCol(m Matrix) Matrix

@@ -8,13 +8,12 @@ import (
 )
 
 const (
-	wSize     = 4  // word size
-	dSize     = 16 // dims header size
-	padSize   = 32 // pad matrix to this size
-	trBlock   = 16 // block size for transpose kernel
-	blockK    = 16 // block size K for matrix muliply kernel
-	block     = 32 // block size MxN for matrix muliply kernel
-	perThread = 4  // no. of lines processed by each thread ** must be at least block/blockK **
+	wSize    = 4  // word size
+	dSize    = 16 // dims header size
+	padSize  = 32 // pad matrix to this size
+	trBlock  = 16 // block size for transpose kernel
+	mulBlock = 32 // block size for matrix multiply kernel
+	mulWG    = 16 // work group size for multiply kernel
 )
 
 var (
@@ -38,17 +37,13 @@ type opencl32 struct {
 	format string
 }
 
-func globalWG(m *opencl32) []uint64 {
-	return []uint64{uint64(m.cols), uint64(m.rows)}
-}
-
 // initialise opencl
 func initCL() {
 	var err error
 	hw = scl.Devices().Select(0)
 	fmt.Println("Init OpenCL:", hw)
 	sw = make([]*scl.Software, numKernels)
-	opts := fmt.Sprintf("-D TRBLK=%d -D TS=%d -D TSK=%d -D WPT=%d", trBlock, block, blockK, perThread)
+	opts := fmt.Sprintf("-D TRBLK=%d -D TS=%d -D WPT=%d", trBlock, mulBlock, mulBlock/mulWG)
 	for i := range sw {
 		if sw[i], err = scl.Compile(hw, srcHead+source, name[i], opts); err != nil {
 			panic(fmt.Sprintf("error compiling %s : %s", name[i], err))
@@ -61,11 +56,6 @@ func releaseCL() {
 		s.Release()
 	}
 	hw.Release()
-}
-
-// pad matrix size to even number of blocks
-func pad(n int32) int32 {
-	return padSize * (1 + (n-1)/padSize)
 }
 
 // constructor
@@ -83,7 +73,9 @@ func newopencl32(rows, cols int) Matrix {
 	}
 }
 
-func (m *opencl32) Release() { m.buf.Release() }
+func (m *opencl32) Release() {
+	m.buf.Release()
+}
 
 // accessors
 func (m *opencl32) Rows() int { return int(m.rows) }
@@ -296,22 +288,42 @@ func (m *opencl32) MulElem(m1, m2 Matrix) Matrix {
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
 // Second matrix must be transposed first before input to this routine.
-func (m *opencl32) Mul(m1, m2 Matrix) Matrix {
+func (m *opencl32) Mul(m1, m2 Matrix, aTrans, bTrans, oTrans bool) Matrix {
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	if a.cols != b.cols {
+	ar, ac, br, bc := a.rows, a.cols, b.rows, b.cols
+	if aTrans {
+		ar, ac = ac, ar
+	}
+	if bTrans {
+		br, bc = bc, br
+	}
+	if ac != br {
 		panic("blas:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	m.reshape(a.rows, b.rows, true)
-	k := sw[mulKernel]
+	if oTrans {
+		m.reshape(bc, ar, true)
+	} else {
+		m.reshape(ar, bc, true)
+	}
+	kernel := mulKernel
+	var trans uint32
+	if aTrans {
+		kernel += 1
+	}
+	if bTrans {
+		kernel += 2
+	}
+	if oTrans {
+		trans = 1
+	}
+	k := sw[kernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
+	k.SetArg(6, 4, unsafe.Pointer(&trans))
 	// local mem kernel
-	gSize := []uint64{uint64(pad(m.cols)) / perThread, uint64(pad(m.rows))}
-	lSize := []uint64{block / perThread, block}
-	// register mem kernel
-	//gSize := []uint64{uint64(pad(m.cols)) / 8, uint64(pad(m.rows)) / 8}
-	//lSize := []uint64{16, 16}
+	gSize := []uint64{mulWG * uint64(pad(bc)) / mulBlock, mulWG * uint64(pad(ar)) / mulBlock}
+	lSize := []uint64{mulWG, mulWG}
 	//fmt.Printf("global size is %+v local size is %+v\n", gSize, lSize)
 	err := k.EnqueueKernel(hw, gSize, lSize, false)
 	if err != nil {
@@ -431,17 +443,12 @@ func Sync() {
 }
 
 // utils
-func transCL(a, b *opencl32, atrans, btrans bool) (ac, ar, bc, br int32, kernel int) {
-	ac, ar, bc, br = a.cols, a.rows, b.cols, b.rows
-	if atrans {
-		ac, ar = ar, ac
-		kernel++
-	}
-	if btrans {
-		bc, br = br, bc
-		kernel += 2
-	}
-	return
+func pad(n int32) int32 {
+	return padSize * (1 + (n-1)/padSize)
+}
+
+func globalWG(m *opencl32) []uint64 {
+	return []uint64{uint64(m.cols), uint64(m.rows)}
 }
 
 func setArgMatrix(k *scl.Software, argc uint32, m *opencl32) {

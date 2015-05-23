@@ -101,7 +101,7 @@ func (s *Stats) String() string {
 }
 
 func (d StatsData) String() string {
-	return fmt.Sprintf("%.4f %4.1f%%", d.Error.Last(), 100*d.ClassError.Last())
+	return fmt.Sprintf("%.5f %4.1f%%", d.Error.Last(), 100*d.ClassError.Last())
 }
 
 // Update method calculates the error and updates the stats.

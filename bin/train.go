@@ -21,8 +21,9 @@ var (
 	debug     = false
 	batch     = false
 	logEvery  = 0
-	trainRuns = 20
+	trainRuns = 10
 	seed      = int64(1)
+	prevCost  *buffer
 )
 
 // exit if fatal error
@@ -33,6 +34,38 @@ func checkErr(err error) {
 	}
 }
 
+// holds cost over last n generations
+type buffer struct {
+	data []float64
+	size int
+}
+
+func newBuffer(size int) *buffer {
+	return &buffer{data: make([]float64, size)}
+}
+
+func (b *buffer) push(v float64) {
+	if b.size < len(b.data) {
+		b.data[b.size] = v
+		b.size++
+	} else {
+		copy(b.data, b.data[1:])
+		b.data[b.size-1] = v
+	}
+}
+
+func (b *buffer) max() (m float64, ok bool) {
+	if len(b.data) == b.size {
+		ok = true
+		for _, v := range b.data {
+			if v > m {
+				m = v
+			}
+		}
+	}
+	return
+}
+
 // return function with stopping criteria
 func stopCriteria(s *network.Stats) bool {
 	var cost float64
@@ -41,7 +74,14 @@ func stopCriteria(s *network.Stats) bool {
 	} else {
 		cost = s.Train.Error.Last()
 	}
-	done := s.Epoch >= maxEpoch || cost < threshold
+	var done bool
+	if s.Epoch >= maxEpoch || cost <= threshold {
+		done = true
+	} else if stopAfter > 0 {
+		maxCost, ok := prevCost.max()
+		done = ok && cost > maxCost
+		prevCost.push(cost)
+	}
 	if logEvery > 0 && (s.Epoch%logEvery == 0 || done) {
 		fmt.Println(s)
 	}
@@ -56,6 +96,7 @@ func train(net *network.Network, data *data.Dataset, s *network.Stats) {
 			fmt.Print("hit return for next run")
 			fmt.Fscanln(os.Stdin)
 		}
+		prevCost = newBuffer(stopAfter)
 		net.SetRandomWeights()
 		if debug {
 			fmt.Println(net)
@@ -92,8 +133,8 @@ func createPlots(stats *network.Stats, d *data.Dataset) (rows, cols int, plots [
 	p3 := mplot.New()
 	p3.Title.Text = "Mean value over runs"
 	p3.X.Label.Text = "run number"
-	p3.Y.Label.Text = "num epochs"
-	mplot.AddLines(p3, mplot.NewLine(stats.NumEpochs.Vector, ""))
+	p3.Y.Label.Text = "run time (s)"
+	mplot.AddLines(p3, mplot.NewLine(stats.RunTime.Vector, ""))
 	p4 := mplot.New()
 	p4.X.Label.Text = "run number"
 	p4.Y.Label.Text = "average test error"

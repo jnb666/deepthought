@@ -119,38 +119,59 @@ func TestSlice(t *testing.T) {
 	m.Release()
 }
 
-func TestMul(t *testing.T) {
-	a := New(2, 3).Load(RowMajor, 1, 2, 3, 4, 5, 6)
-	a.SetFormat("%3.0f")
-	t.Logf("a\n%s\n", a)
-	b := New(2, 3).Load(ColMajor, 7, 8, 9, 10, 11, 12)
-	b.SetFormat("%3.0f")
-	t.Logf("b\n%s\n", b)
-	m := New(2, 2).Mul(a, b)
-	m.SetFormat("%3.0f")
-	t.Logf("m\n%s\n", m)
+func checkMul(t *testing.T, m Matrix, title string, oTrans bool) {
+	t.Logf("%s\n%s\n", title, m)
 	expect := []float64{58, 64, 139, 154}
-	if m.Rows() != 2 || m.Cols() != 2 || !reflect.DeepEqual(m.Data(RowMajor), expect) {
+	order := RowMajor
+	if oTrans {
+		order = ColMajor
+	}
+	if m.Rows() != 2 || m.Cols() != 2 || !reflect.DeepEqual(m.Data(order), expect) {
 		t.Error("expected", expect)
 	}
+}
+
+func TestMul(t *testing.T) {
+	a := New(2, 3).Load(RowMajor, 1, 2, 3, 4, 5, 6)
+	at := New(3, 2).Transpose(a)
+	a.SetFormat("%3.0f")
+	t.Logf("a\n%s\n", a)
+
+	b := New(3, 2).Load(RowMajor, 7, 8, 9, 10, 11, 12)
+	bt := New(2, 3).Transpose(b)
+	b.SetFormat("%3.0f")
+	t.Logf("b\n%s\n", b)
+
+	m := New(2, 2)
+	m.SetFormat("%3.0f")
+
+	for _, outTrans := range []bool{false, true} {
+		m.Mul(a, b, false, false, outTrans)
+		checkMul(t, m, "m", outTrans)
+
+		// test with a transposed
+		m.Mul(at, b, true, false, outTrans)
+		checkMul(t, m, "m - atrans", outTrans)
+
+		// test with b transposed
+		m.Mul(a, bt, false, true, outTrans)
+		checkMul(t, m, "m - btrans", outTrans)
+
+		// test with a and b transposed
+		m.Mul(at, bt, true, true, outTrans)
+		checkMul(t, m, "m - atrans + btrans", outTrans)
+	}
+
 	a.Release()
 	b.Release()
+	at.Release()
+	bt.Release()
 	m.Release()
 	return
 }
 
-func TestBigMlt(t *testing.T) {
-	rand.Seed(1)
-	m1 := New(40, 30).Load(RowMajor, randSlice(40*30)...)
-	m1.SetFormat("%2.0f")
-	t.Logf("m1\n%s\n", m1)
-	m2 := New(30, 20).Load(RowMajor, randSlice(30*20)...)
-	m3 := New(20, 30).Transpose(m2)
-	m3.SetFormat("%2.0f")
-	t.Logf("m2\n%s\n", m3)
-	m := New(40, 20).Mul(m1, m3)
-	m.SetFormat("%4.0f")
-	t.Logf("m0\n%s\n", m)
+func checkBig(t *testing.T, m Matrix, title string) {
+	t.Logf("%s\n%s\n", title, m)
 	expect := []float64{
 		2453, 2408, 2687, 2708, 2232, 2565, 2537, 2553, 2954, 2805, 2864, 1523, 2778, 2013, 2629, 2654, 2409, 2636, 2539, 2998,
 		2772, 2542, 3006, 2682, 2403, 2819, 3008, 2802, 3143, 3150, 3240, 1876, 2857, 2445, 2798, 3099, 2785, 2960, 2824, 3374,
@@ -196,6 +217,41 @@ func TestBigMlt(t *testing.T) {
 	if m.Rows() != 40 || m.Cols() != 20 || !reflect.DeepEqual(m.Data(RowMajor), expect) {
 		t.Error("mul: expected", expect)
 	}
+}
+
+func TestBigMlt(t *testing.T) {
+	rand.Seed(1)
+	a := New(40, 30).Load(RowMajor, randSlice(40*30)...)
+	at := New(30, 40).Transpose(a)
+	a.SetFormat("%2.0f")
+	t.Logf("a\n%s\n", a)
+	b := New(30, 20).Load(RowMajor, randSlice(30*20)...)
+	bt := New(20, 30).Transpose(b)
+	b.SetFormat("%2.0f")
+	t.Logf("m2\n%s\n", b)
+	m := New(40, 20)
+	m.SetFormat("%4.0f")
+
+	m.Mul(a, b, false, false, false)
+	checkBig(t, m, "m")
+
+	// test with a transposed
+	m.Mul(at, b, true, false, false)
+	checkBig(t, m, "m - atrans")
+
+	// test with b transposed
+	m.Mul(a, bt, false, true, false)
+	checkBig(t, m, "m - btrans")
+
+	// test with a and b transposed
+	m.Mul(at, bt, true, true, false)
+	checkBig(t, m, "m - atrans + btrans")
+
+	a.Release()
+	at.Release()
+	b.Release()
+	bt.Release()
+	m.Release()
 }
 
 func TestApply(t *testing.T) {
@@ -309,7 +365,7 @@ func BenchmarkMul(b *testing.B) {
 	m1 := New(rows, cols).Load(RowMajor, randSlice(rows*cols)...)
 	m2 := New(rows, cols).Load(RowMajor, randSlice(rows*cols)...)
 	for i := 0; i < b.N; i++ {
-		m0.Mul(m1, m2)
+		m0.Mul(m1, m2, false, false, false)
 		Sync()
 	}
 }

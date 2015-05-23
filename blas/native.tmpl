@@ -213,20 +213,44 @@ func (m *{{.Struct}}) MulElem(m1, m2 Matrix) Matrix {
 }
 
 // Mul method multiplies two matrices using regular matrix multiplication and puts the output in m.
-// Second matrix must be transposed first before input to this routine.
-func (m *{{.Struct}}) Mul(m1, m2 Matrix) Matrix {
+func (m *{{.Struct}}) Mul(m1, m2 Matrix, aTrans, bTrans, oTrans bool) Matrix {
 	a, b := m1.(*{{.Struct}}), m2.(*{{.Struct}})
-	if a.cols != b.cols {
+	ar, ac, br, bc := a.rows, a.cols, b.rows, b.cols
+	aget := func(r, c int) {{.Type}} { return a.at(r, c)} 
+	bget := func(r, c int) {{.Type}} { return b.at(r, c)}
+
+	if aTrans {
+		ar, ac = ac, ar
+		aget = func(r, c int) {{.Type}} { return a.at(c, r)} 
+	}
+	if bTrans {
+		br, bc = bc, br
+		bget = func(r, c int) {{.Type}} { return b.at(c, r)}
+	}
+	if ac != br {
 		panic("blas:Mul - mismatch in no. of rows and columns in input matrices")
 	}
-	m.Reshape(a.rows, b.rows, true)
-	for row := 0; row < a.rows; row++ {
-		for col := 0; col < b.rows; col++ {
-			sum := {{.Type}}(0)
-			for k := 0; k < a.cols; k++ {
-				sum += a.at(row, k) * b.at(col, k)
+	if oTrans {
+		m.Reshape(bc, ar, true)
+		for row := 0; row < ar; row++ {
+			for col := 0; col < bc; col++ {
+				sum := {{.Type}}(0)
+				for k := 0; k < ac; k++ {
+					sum += aget(row, k) * bget(k, col)
+				}
+				m.set(col, row, sum)
 			}
-			m.set(row, col, sum)
+		}
+	} else {
+		m.Reshape(ar, bc, true)
+		for row := 0; row < ar; row++ {
+			for col := 0; col < bc; col++ {
+				sum := {{.Type}}(0)
+				for k := 0; k < ac; k++ {
+					sum += aget(row, k) * bget(k, col)
+				}
+				m.set(row, col, sum)
+			}
 		}
 	}
 	return m
