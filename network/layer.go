@@ -1,7 +1,6 @@
 package network
 
 import (
-	"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"math"
 )
@@ -9,7 +8,7 @@ import (
 // Layer interface type represents one layer in the network.
 type Layer interface {
 	FeedForward(in blas.Matrix) blas.Matrix
-	BackProp(err blas.Matrix, eta float64) blas.Matrix
+	BackProp(err blas.Matrix, momentum float64) blas.Matrix
 	Weights() blas.Matrix
 	Gradient() blas.Matrix
 	Cost(t blas.Matrix) float64
@@ -17,26 +16,28 @@ type Layer interface {
 }
 
 type layer struct {
-	nlayer   int
-	activ    Activation
-	input    blas.Matrix // Z matrix of value at each node [samples, nin+1]
-	output   blas.Matrix // return value at each node [samples, nout]
-	weights  blas.Matrix // W outgoing weight matrix  [nout, nin+1]
-	gradient blas.Matrix // G gradient of weight matrix [nout, nin+1]
-	deriv    blas.Matrix // Fp matrix of derivative of activation fn [samples, nin]
-	delta    blas.Matrix // D matrix of errors at each node [samples, nin]
+	nlayer    int
+	activ     Activation
+	input     blas.Matrix // Z matrix of value at each node [samples, nin+1]
+	output    blas.Matrix // return value at each node [samples, nout]
+	weights   blas.Matrix // W outgoing weight matrix  [nout, nin+1]
+	gradient  blas.Matrix // G gradient of weight matrix [nout, nin+1]
+	gradient2 blas.Matrix // G' gradient of weight matrix [nout, nin+1]
+	deriv     blas.Matrix // Fp matrix of derivative of activation fn [samples, nin]
+	delta     blas.Matrix // D matrix of errors at each node [samples, nin]
 }
 
 // AddLayer method adds a new input or hidden layer to the network.
 func (n *Network) AddLayer(nin, nout int, a Activation) {
 	batch := n.BatchSize
 	l := &layer{
-		nlayer:   n.Layers,
-		activ:    a,
-		input:    blas.New(batch, nin+1),
-		output:   blas.New(batch, nout),
-		weights:  blas.New(nout, nin+1),
-		gradient: blas.New(nout, nin+1),
+		nlayer:    n.Layers,
+		activ:     a,
+		input:     blas.New(batch, nin+1),
+		output:    blas.New(batch, nout),
+		weights:   blas.New(nout, nin+1),
+		gradient:  blas.New(nout, nin+1),
+		gradient2: blas.New(nout, nin+1),
 	}
 	if a.Deriv != nil {
 		l.deriv = blas.New(batch, nin)
@@ -44,7 +45,7 @@ func (n *Network) AddLayer(nin, nout int, a Activation) {
 	if n.Layers > 0 {
 		l.delta = blas.New(nin, batch)
 	}
-	n.Add(l)
+	n.add(l)
 }
 
 func (l *layer) Release() {
@@ -69,42 +70,28 @@ func (l *layer) Cost(t blas.Matrix) float64 { panic("no cost for input or hidden
 func (l *layer) FeedForward(in blas.Matrix) blas.Matrix {
 	l.activ.Func.Apply(in, l.input)
 	if l.activ.Deriv != nil {
-		l.activ.Deriv.Apply(l.input, l.deriv)
+		l.activ.Deriv.Apply(in, l.deriv)
 	}
 	nin := in.Cols()
 	l.input.Reshape(in.Rows(), nin+1, false)
 	l.input.Col(nin, nin+1).Set(1)
-	if Debug {
-		fmt.Printf("Layer %d feedforward: input\n%s\n", l.nlayer, l.input)
-	}
 	l.output.Mul(l.input, l.weights, false, true, false)
-	if Debug {
-		fmt.Printf("Layer %d feedforward: output\n%s\n", l.nlayer, l.output)
-	}
 	return l.output
 }
 
-func (l *layer) BackProp(err blas.Matrix, eta float64) blas.Matrix {
-	if Debug {
-		fmt.Printf("Layer %d backprop: input delta\n%s\n", l.nlayer, err)
-	}
-	// update gradient
-	etap := -eta / float64(l.output.Rows())
-	l.gradient.Mul(err, l.input, true, false, false).Scale(etap)
-	if Debug {
-		fmt.Printf("Layer %d backprop: gradient\n%s\n", l.nlayer, l.gradient)
+func (l *layer) BackProp(err blas.Matrix, momentum float64) blas.Matrix {
+	// calculate the gradient
+	if momentum == 0 {
+		l.gradient.Mul(err, l.input, true, false, false)
+	} else {
+		l.gradient2.Mul(err, l.input, true, false, false)
+		l.gradient.Add(l.gradient2, l.gradient, momentum)
 	}
 	// propagate error backward
 	if l.delta != nil {
-		if Debug {
-			fmt.Printf("Layer %d backprop: weights\n%s\n", l.nlayer, l.weights)
-		}
 		c := l.weights.Cols()
 		l.delta.Mul(l.weights.Col(0, c-1), err, true, true, true)
 		l.delta.MulElem(l.delta, l.deriv)
-		if Debug {
-			fmt.Printf("Layer %d backprop: output delta\n%s\n", l.nlayer, l.delta)
-		}
 	}
 	return l.delta
 }
@@ -145,26 +132,17 @@ func (l *outLayer) Weights() blas.Matrix { panic("no weights for output layer!")
 func (l *outLayer) Gradient() blas.Matrix { panic("no gradient for output layer!") }
 
 func (l *outLayer) FeedForward(in blas.Matrix) blas.Matrix {
-	if Debug {
-		fmt.Printf("OutLayer feedforward: input\n%s\n", in)
-	}
 	l.activ.Func.Apply(in, l.values)
 	if l.activ.Deriv != nil {
-		l.activ.Deriv.Apply(l.values, l.deriv)
-	}
-	if Debug {
-		fmt.Printf("OutLayer feedforward: output\n%s\n", l.values)
+		l.activ.Deriv.Apply(in, l.deriv)
 	}
 	return l.values
 }
 
-func (l *outLayer) BackProp(target blas.Matrix, eta float64) blas.Matrix {
+func (l *outLayer) BackProp(target blas.Matrix, momentum float64) blas.Matrix {
 	l.delta.Add(l.values, target, -1)
 	if l.activ.Deriv != nil {
 		l.delta.MulElem(l.delta, l.deriv)
-	}
-	if Debug {
-		fmt.Printf("OutLayer backprop: delta\n%s\n", l.delta)
 	}
 	return l.delta
 }
@@ -174,22 +152,22 @@ func (l *outLayer) Cost(target blas.Matrix) float64 {
 	return l.temp.Sum() / float64(target.Rows())
 }
 
-// QuadraticOutput method appends a quadratic cost output layer to the network.
-func (n *Network) QuadraticOutput(nodes int, a Activation) {
+// AddQuadraticOutput method appends a quadratic cost output layer to the network.
+func (n *Network) AddQuadraticOutput(nodes int, a Activation) {
 	layer := newOutLayer(n.BatchSize, nodes, a)
 	if blas.Implementation() == blas.OpenCL32 {
-		layer.cost = blas.NewBinaryCL("(x - y) * (x - y)")
+		layer.cost = blas.NewBinaryCL("float z = (x-y)*(x-y);")
 	} else {
 		layer.cost = blas.Binary64(func(out, tgt float64) float64 { return (out - tgt) * (out - tgt) })
 	}
-	n.Add(layer)
+	n.add(layer)
 }
 
-// CrossEntropyOutput method appends a cross entropy output layer with softmax activation to the network.
-func (n *Network) CrossEntropyOutput(nodes int) {
+// AddCrossEntropyOutput method appends a cross entropy output layer with softmax activation to the network.
+func (n *Network) AddCrossEntropyOutput(nodes int) {
 	layer := newOutLayer(n.BatchSize, nodes, Softmax)
 	if blas.Implementation() == blas.OpenCL32 {
-		layer.cost = blas.NewBinaryCL("-y * log(max(x, 1e-10f))")
+		layer.cost = blas.NewBinaryCL("float z = -y * log(max(x, 1e-10f));")
 	} else {
 		layer.cost = blas.Binary64(func(out, tgt float64) float64 {
 			if out < 1e-10 {
@@ -198,5 +176,5 @@ func (n *Network) CrossEntropyOutput(nodes int) {
 			return -tgt * math.Log(out)
 		})
 	}
-	n.Add(layer)
+	n.add(layer)
 }

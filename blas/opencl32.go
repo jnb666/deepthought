@@ -183,12 +183,22 @@ func (m *opencl32) Col(col1, col2 int) Matrix {
 }
 
 // Copy method returs a copy of the input matrix
-func (m *opencl32) Copy(in Matrix) Matrix {
+func (m *opencl32) Copy(in, ix Matrix) Matrix {
 	a := in.(*opencl32)
-	m.reshape(a.rows, a.cols, false)
-	k := sw[copyKernel]
-	setArgMatrix(k, 0, a)
-	setArgMatrix(k, 2, m)
+	var k *scl.Software
+	if ix == nil {
+		m.reshape(a.rows, a.cols, false)
+		k = sw[copyKernel]
+		setArgMatrix(k, 0, a)
+		setArgMatrix(k, 2, m)
+	} else {
+		mix := ix.(*opencl32)
+		m.reshape(mix.rows, a.cols, false)
+		k = sw[copyIxKernel]
+		setArgMatrix(k, 0, a)
+		setArgMatrix(k, 2, mix)
+		setArgMatrix(k, 4, m)
+	}
 	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
 	if err != nil {
 		panic(err)
@@ -383,7 +393,7 @@ type UnaryCL struct {
 
 // NewUnaryCL function compiles a new function of one variable
 func NewUnaryCL(text string) UnaryCL {
-	src := srcHead + unarySrc + "m[P(md,row,col)] = " + text + "; }"
+	src := srcHead + unarySrc + text + "m[P(md,row,col)] = y; }"
 	sw, err := scl.Compile(hw, src, "unary", "")
 	if err != nil {
 		panic(err)
@@ -412,7 +422,7 @@ type BinaryCL struct {
 
 // NewUnaryCL function compiles a new function of one variable
 func NewBinaryCL(text string) BinaryCL {
-	src := srcHead + binarySrc + "m[P(md,row,col)] = " + text + "; }"
+	src := srcHead + binarySrc + text + "m[P(md,row,col)] = z; }"
 	sw, err := scl.Compile(hw, src, "binary", "")
 	if err != nil {
 		panic(err)

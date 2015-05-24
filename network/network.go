@@ -1,3 +1,4 @@
+// Package network implements feedforward neural nets with training using stochastic gradient descent.
 package network
 
 import (
@@ -11,19 +12,14 @@ import (
 	"time"
 )
 
-const (
-	epsilon = 1e-4
-)
-
-var (
-	Debug = false
-)
+const epsilon = 1e-4
 
 // Standard activation functions
 var (
 	Linear  = Activation{linear{}, nil}
 	Sigmoid Activation
 	Tanh    Activation
+	Relu    Activation
 	Softmax Activation
 )
 
@@ -38,24 +34,45 @@ func Init(imp blas.Impl) {
 	blas.Init(imp)
 	if imp == blas.OpenCL32 {
 		Sigmoid = Activation{
-			Func:  blas.NewUnaryCL("1.f / (1.f + exp(-x))"),
-			Deriv: blas.NewUnaryCL("x * (1.f - x)"),
+			Func:  blas.NewUnaryCL("float y = 1.f/(1.f+exp(-x));"),
+			Deriv: blas.NewUnaryCL("float s = 1.f/(1.f+exp(-x)); float y = s*(1.f-s);"),
 		}
 		Tanh = Activation{
-			Func:  blas.NewUnaryCL("tanh(x)"),
-			Deriv: blas.NewUnaryCL("1.f - x*x"),
+			Func:  blas.NewUnaryCL("float y = tanh(x);"),
+			Deriv: blas.NewUnaryCL("float s = tanh(x); float y = 1.f-s*s;"),
+		}
+		Relu = Activation{
+			Func:  blas.NewUnaryCL("float y = max(x, 0.f);"),
+			Deriv: blas.NewUnaryCL("float y = x >= 0.f ? 1.f : 0.f;"),
 		}
 		Softmax = Activation{
-			Func: softmax{fn: blas.NewUnaryCL("exp(x)")},
+			Func: softmax{fn: blas.NewUnaryCL("float y = exp(x);")},
 		}
 	} else {
 		Sigmoid = Activation{
-			Func:  blas.Unary64(func(x float64) float64 { return 1 / (1 + math.Exp(-x)) }),
-			Deriv: blas.Unary64(func(x float64) float64 { return x * (1 - x) }),
+			Func: blas.Unary64(sigmoid),
+			Deriv: blas.Unary64(func(x float64) float64 {
+				y := sigmoid(x)
+				return y * (1 - y)
+			}),
 		}
 		Tanh = Activation{
-			Func:  blas.Unary64(math.Tanh),
-			Deriv: blas.Unary64(func(x float64) float64 { return 1 - x*x }),
+			Func: blas.Unary64(math.Tanh),
+			Deriv: blas.Unary64(func(x float64) float64 {
+				y := math.Tanh(x)
+				return 1 - y*y
+			}),
+		}
+		Relu = Activation{
+			Func: blas.Unary64(func(x float64) float64 {
+				return math.Max(x, 0)
+			}),
+			Deriv: blas.Unary64(func(x float64) float64 {
+				if x >= 0 {
+					return 1
+				}
+				return 0
+			}),
 		}
 		Softmax = Activation{
 			Func: softmax{fn: blas.Unary64(math.Exp)},
@@ -63,9 +80,13 @@ func Init(imp blas.Impl) {
 	}
 }
 
+func sigmoid(x float64) float64 {
+	return 1 / (1 + math.Exp(-x))
+}
+
 type linear struct{}
 
-func (linear) Apply(x, y blas.Matrix) blas.Matrix { return y.Copy(x) }
+func (linear) Apply(x, y blas.Matrix) blas.Matrix { return y.Copy(x, nil) }
 
 type softmax struct{ fn blas.UnaryFunction }
 
@@ -86,20 +107,17 @@ type Network struct {
 	checkSamples int
 	checkMax     float64
 	checkScale   float64
-	testBatches  int
 }
 
-// NewNetwork function initialises a new network, samples is the maximum number of samples, i.e. minibatch size.
-func NewNetwork(samples int) *Network {
+// New function initialises a new network, samples is the maximum number of samples, i.e. minibatch size.
+func New(samples int) *Network {
 	return &Network{
-		BatchSize:   samples,
-		classes:     blas.New(samples, 1),
-		testBatches: 1,
+		BatchSize: samples,
+		classes:   blas.New(samples, 1),
 	}
 }
 
-// Add method appends a new layer to the network
-func (n *Network) Add(l Layer) {
+func (n *Network) add(l Layer) {
 	n.Nodes = append(n.Nodes, l)
 	n.Layers++
 }
@@ -145,32 +163,30 @@ func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 	return m
 }
 
-// Set number of batches to use when evaluating the error
-func (n *Network) TestBatches(num int) {
-	n.testBatches = num
-}
-
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
-func (n *Network) GetError(d *data.Data) (totalErr, classErr float64) {
+// samples parameter is the maximum number of samples to check.
+func (n *Network) GetError(d *data.Data, samples int) (totalErr, classErr float64) {
 	costFn := n.Nodes[n.Layers-1].Cost
-	outputs := float64(d.Output[0].Cols())
-	batchSize := float64(d.Output[0].Rows())
-	// calc average over a random sample of test batches
+	cols := float64(d.Output.Cols())
 	totalError := new(mplot.RunningStat)
 	classError := new(mplot.RunningStat)
-	for i, batch := range rand.Perm(n.testBatches) {
-		if n.Verbose && i > 0 && i%10 == 0 {
-			fmt.Printf("\rtest batch: %d/%d        ", i+1, n.testBatches)
-		}
+	rows := n.BatchSize
+	if rows > samples {
+		rows = samples
+	}
+	for ix := 0; ix < samples; ix += rows {
 		// get cost
-		output := n.FeedForward(d.Input[batch])
-		totalError.Push(costFn(d.Output[batch]) / outputs)
+		output := n.FeedForward(d.Input.Row(ix, ix+rows))
+		totalError.Push(costFn(d.Output.Row(ix, ix+rows)) / cols)
 		// get classification error
 		n.out2class.Apply(output, n.classes)
-		n.classes.Cmp(n.classes, d.Classes[batch], epsilon)
-		classError.Push(n.classes.Sum() / batchSize)
+		n.classes.Cmp(n.classes, d.Classes.Row(ix, ix+rows), epsilon)
+		classError.Push(n.classes.Sum() / float64(rows))
+		if n.Verbose {
+			fmt.Printf("\rtest batch: %d/%d        ", ix+rows, samples)
+		}
 	}
-	if n.testBatches > 1 {
+	if n.Verbose {
 		fmt.Print("\r")
 	}
 	return totalError.Mean, classError.Mean
@@ -241,58 +257,74 @@ func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 	return
 }
 
-// Train step method performs one training step
-func (n *Network) TrainStep(in, out blas.Matrix, learnRate float64, s *Stats, batch int) {
+// Train step method performs one training step. eta is the learning rate, lambda is the weight decay.
+func (n *Network) TrainStep(batch, samples int, in, out blas.Matrix, eta, lambda, momentum float64, s *Stats) {
 	n.FeedForward(in)
-	delta := out
-	for i := n.Layers - 1; i >= 0; i-- {
-		delta = n.Nodes[i].BackProp(delta, learnRate)
+	// back propagate error and scale gradient
+	delta := n.Nodes[n.Layers-1].BackProp(out, momentum)
+	batchSize := float64(in.Rows())
+	for i := n.Layers - 2; i >= 0; i-- {
+		layer := n.Nodes[i]
+		delta = layer.BackProp(delta, momentum)
+		layer.Gradient().Scale(-eta / batchSize)
 	}
-	// check gradients?
+	// optionally check gradients
 	if batch == 0 && n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
 		n.doCheck(in, out)
 	}
+	// update weights
+	weightScale := 1 - eta*lambda/float64(samples)
 	for _, layer := range n.Nodes[:n.Layers-1] {
-		layer.Weights().Add(layer.Weights(), layer.Gradient(), 1)
+		w := layer.Weights()
+		if lambda != 0 {
+			w.Col(0, w.Cols()-1).Scale(weightScale)
+		}
+		w.Add(w, layer.Gradient(), 1)
 	}
 }
 
 // Train method trains the network on the given training set and updates the stats.
 // stop callback function returns true if we should terminate the run.
-func (n *Network) Train(d *data.Dataset, learnRate float64, s *Stats, stop func(*Stats) bool) int {
+func (n *Network) Train(d *data.Dataset, smp Sampler, eta, lambda, momentum float64, stats *Stats, stop func(*Stats) bool) int {
 	n.out2class = d.OutputToClass
-	s.StartRun()
+	in := blas.New(n.BatchSize, d.Train.Input.Cols())
+	out := blas.New(n.BatchSize, d.Train.Output.Cols())
+	stats.StartRun()
 	for {
-		s.StartEpoch = time.Now()
-		// train over each batch of data - present batches in random order
-		nbatch := len(d.Train.Input)
-		if nbatch > 1 {
-			for i, batch := range rand.Perm(nbatch) {
-				if n.Verbose && i > 0 && i%5 == 0 {
-					fmt.Printf("\rtrain batch: %d/%d        ", i+1, nbatch)
-				}
-				n.TrainStep(d.Train.Input[batch], d.Train.Output[batch], learnRate, s, batch)
+		stats.StartEpoch = time.Now()
+		// train over each batch of data
+		smp.Init(n.BatchSize)
+		batch := 0
+		ok := true
+		for ok {
+			smp.Sample(d.Train.Input, in)
+			smp.Sample(d.Train.Output, out)
+			n.TrainStep(batch, d.Train.NumSamples, in, out, eta, lambda, momentum, stats)
+			batch++
+			if n.Verbose {
+				fmt.Printf("\rtrain batch: %d/%d        ", batch, d.Train.NumSamples/n.BatchSize)
 			}
-		} else {
-			n.TrainStep(d.Train.Input[0], d.Train.Output[0], learnRate, s, 0)
+			ok = smp.Next()
 		}
 		// update stats and check stopping condition
-		s.Update(n, d)
-		if stop(s) {
+		stats.Update(n, d)
+		if stop(stats) {
 			break
 		}
-		s.Epoch++
+		stats.Epoch++
 
 	}
-	s.EndRun()
-	return s.Epoch
+	stats.EndRun()
+	in.Release()
+	out.Release()
+	return stats.Epoch
 }
 
-// SeedRandom function sets the random seed, or seeds using time if input is zero
-func SeedRandom(seed int64) {
+// SeedRandom function sets the random seed, or seeds using time if input is zero. Returns the seed which was used.
+func SeedRandom(seed int64) int64 {
 	if seed == 0 {
 		seed = time.Now().UTC().UnixNano()
 	}
-	fmt.Println("random seed =", seed)
 	rand.Seed(seed)
+	return seed
 }

@@ -1,3 +1,4 @@
+// Package iris loads the iris dataset from file.
 package iris
 
 import (
@@ -11,30 +12,30 @@ const base = "/home/john/go/src/github.com/jnb666/deepthought/data/iris/"
 
 // register dataset when module is imported
 func init() {
-	data.Register["iris"] = loader{}
+	data.Register["iris"] = Loader{}
 }
 
-type classify struct{}
+type Classify struct{}
 
-func (classify) Apply(out, class blas.Matrix) blas.Matrix {
+func (Classify) Apply(out, class blas.Matrix) blas.Matrix {
 	return class.MaxCol(out)
 }
 
-type loader struct{}
+type Loader struct{}
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-func (loader) Load(samples, batch int) (s *data.Dataset, err error) {
+func (Loader) Load(samples int) (s *data.Dataset, err error) {
 	var nin, nout int
 	s = new(data.Dataset)
-	s.OutputToClass = classify{}
-	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples, batch, s.OutputToClass)
+	s.OutputToClass = Classify{}
+	s.Test, s.NumInputs, s.NumOutputs, err = data.LoadFile(base+"iris_test.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
 	}
 	s.MaxSamples = s.Test.NumSamples
 
-	s.Train, nin, nout, err = data.LoadFile(base+"iris_training.dat", samples, batch, s.OutputToClass)
+	s.Train, nin, nout, err = data.LoadFile(base+"iris_training.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
 	}
@@ -45,7 +46,7 @@ func (loader) Load(samples, batch int) (s *data.Dataset, err error) {
 		s.MaxSamples = s.Train.NumSamples
 	}
 
-	s.Valid, nin, nout, err = data.LoadFile(base+"iris_validation.dat", samples, batch, s.OutputToClass)
+	s.Valid, nin, nout, err = data.LoadFile(base+"iris_validation.dat", samples, s.OutputToClass)
 	if err != nil {
 		return
 	}

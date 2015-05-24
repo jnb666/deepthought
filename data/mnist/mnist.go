@@ -1,8 +1,8 @@
+// Package mnist loads the MNist dataset of handwritten digits.
 package mnist
 
 import (
 	"encoding/binary"
-	"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	"os"
@@ -20,42 +20,37 @@ const (
 	testMax     = 10000
 )
 
-var Debug = false
-
 // register dataset when module is imported
 func init() {
-	data.Register["mnist"] = loader{}
+	data.Register["mnist"] = Loader{}
 }
 
 // classification function
-type classify struct{}
+type Classify struct{}
 
-func (classify) Apply(out, class blas.Matrix) blas.Matrix { return class.MaxCol(out) }
+func (Classify) Apply(out, class blas.Matrix) blas.Matrix { return class.MaxCol(out) }
 
-type loader struct{}
+type Loader struct{}
 
 // rescale intensity to value
-func rescale(x uint8) float64 { return float64(x) / 255 }
+func rescale(x uint8) float64 { return float64(x) / 255.0 }
 
 // Load function loads and returns the iris dataset.
 // samples is maxiumum number of records to load from each dataset if non-zero.
-func (loader) Load(samples, batchSize int) (*data.Dataset, error) {
+func (Loader) Load(samples int) (*data.Dataset, error) {
 	s := new(data.Dataset)
-	s.OutputToClass = classify{}
-	if batchSize == 0 {
-		batchSize = testMax
-	}
+	s.OutputToClass = Classify{}
 
 	// training set
 	r := newReader(trainLabels, trainImages)
-	s.Train = r.read(samples, batchSize, trainMax)
+	s.Train = r.read(samples, trainMax)
 	s.NumInputs = int(r.image.Width * r.image.Height)
 	s.NumOutputs = numOutputs
 	s.MaxSamples = s.Train.NumSamples
 
 	// validation set
 	r.seek(trainMax)
-	s.Valid = r.read(samples, batchSize, testMax)
+	s.Valid = r.read(samples, testMax)
 	r.close()
 	if r.err != nil {
 		return s, r.err
@@ -63,7 +58,7 @@ func (loader) Load(samples, batchSize int) (*data.Dataset, error) {
 
 	// test set
 	r = newReader(testLabels, testImages)
-	s.Test = r.read(samples, batchSize, testMax)
+	s.Test = r.read(samples, testMax)
 	r.close()
 	return s, r.err
 }
@@ -86,17 +81,11 @@ func newReader(labelFile, imageFile string) (r *imageReader) {
 	if r.err = binary.Read(r.flab, binary.BigEndian, &r.label); r.err != nil {
 		return
 	}
-	if Debug {
-		fmt.Printf("open %s : %+v\n", labelFile, r.label)
-	}
 	if r.fimg, r.err = os.Open(base + imageFile); r.err != nil {
 		return
 	}
 	if r.err = binary.Read(r.fimg, binary.BigEndian, &r.image); r.err != nil {
 		return
-	}
-	if Debug {
-		fmt.Printf("open %s : %+v\n", imageFile, r.image)
 	}
 	return
 }
@@ -122,34 +111,16 @@ func (r *imageReader) seek(n int) {
 	if _, r.err = r.fimg.Seek(offset, 0); r.err != nil {
 		return
 	}
-	if Debug {
-		fmt.Printf("seek to image %d\n", n)
-	}
 }
 
 // read an entire dataset
-func (r *imageReader) read(samples, batchSize, maxImages int) *data.Data {
+func (r *imageReader) read(samples, maxImages int) *data.Data {
 	d := new(data.Data)
 	if samples == 0 || samples > maxImages {
 		samples = maxImages
 	}
-	if batchSize > samples {
-		batchSize = samples
-	}
-	nbatch := samples / batchSize
-	d.Input = make([]blas.Matrix, nbatch)
-	d.Output = make([]blas.Matrix, nbatch)
-	d.Classes = make([]blas.Matrix, nbatch)
-	for i := range d.Input {
-		if r.err != nil {
-			return nil
-		}
-		d.Input[i], d.Output[i], d.Classes[i] = r.readBatch(batchSize)
-	}
-	if Debug {
-		fmt.Printf("read %d batches of %d images\n", nbatch, batchSize)
-	}
-	d.NumSamples = nbatch * batchSize
+	d.Input, d.Output, d.Classes = r.readBatch(samples)
+	d.NumSamples = samples
 	return d
 }
 
@@ -170,7 +141,7 @@ func (r *imageReader) readBatch(n int) (in, out, class blas.Matrix) {
 		}
 		for y := 0; y < size; y++ {
 			for x := 0; x < size; x++ {
-				idata[i*size*size+y*size+x] = rescale(image[(size-y-1)*size+x])
+				idata[i*size*size+y*size+x] = rescale(image[y*size+x])
 			}
 		}
 		for j := 0; j < numOutputs; j++ {

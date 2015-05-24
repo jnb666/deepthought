@@ -26,17 +26,26 @@ func TestLoad(t *testing.T) {
 }
 
 func TestCopy(t *testing.T) {
-	m := New(2, 2).Load(RowMajor, 1, 2, 3, 4)
+	m := New(4, 2).Load(RowMajor, 1, 2, 3, 4, 5, 6, 7, 8)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
-	m2 := New(2, 3).Copy(m)
-	m2.Reshape(2, 3, false)
+	m2 := New(4, 3).Copy(m, nil)
+	m2.Reshape(4, 3, false)
 	m2.SetFormat("%3.0f")
 	t.Logf("m2\n%s\n", m2)
-	expect := []float64{1, 2, 0, 3, 4, 0}
+	expect := []float64{1, 2, 0, 3, 4, 0, 5, 6, 0, 7, 8, 0}
 	if !reflect.DeepEqual(m2.Data(RowMajor), expect) {
 		t.Error("expected", expect)
 	}
+	// select top and bottom row
+	ix := New(2, 1).Load(ColMajor, 0, 3)
+	m2.Copy(m, ix)
+	t.Logf("m2\n%s\n", m2)
+	expect = []float64{1, 2, 7, 8}
+	if !reflect.DeepEqual(m2.Data(RowMajor), expect) {
+		t.Error("expected", expect)
+	}
+	ix.Release()
 	m2.Release()
 	m.Release()
 }
@@ -261,8 +270,8 @@ func TestApply(t *testing.T) {
 	var fu UnaryFunction
 	var fb BinaryFunction
 	if implementation == OpenCL32 {
-		fu = NewUnaryCL("x * x")
-		fb = NewBinaryCL("x + y*y")
+		fu = NewUnaryCL("float y = x * x;")
+		fb = NewBinaryCL("float z = x + y*y;")
 	} else {
 		fu = Unary64(func(x float64) float64 { return x * x })
 		fb = Binary64(func(x, y float64) float64 { return x + y*y })

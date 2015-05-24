@@ -89,13 +89,25 @@ func (m *{{.Struct}}) Data(order Ordering) []float64 {
 }
 
 // Copy method returns a copy of the input matrix
-func (m *{{.Struct}}) Copy(in Matrix) Matrix {
+// if ix matrix is non-nil then this provides a column vector with the rows to copy.
+func (m *{{.Struct}}) Copy(in, ix Matrix) Matrix {
 	a := in.(*{{.Struct}})
-	m.Reshape(a.rows, a.cols, false)
-	for row := 0; row < m.rows; row++ {
-		for col := 0; col < m.cols; col++ {
-			m.set(row, col, a.at(row, col))
+	if ix == nil {
+		m.Reshape(a.rows, a.cols, false)
+		for row := 0; row < m.rows; row++ {
+			for col := 0; col < m.cols; col++ {
+				m.set(row, col, a.at(row, col))
+			}
 		}
+	} else {
+		b := ix.(*{{.Struct}})
+		m.Reshape(b.rows, a.cols, false)
+		for row := 0; row < b.rows; row++ {
+			ixrow := int(b.at(row, 0))
+			for col := 0; col < m.cols; col++ {
+				m.set(row, col, a.at(ixrow, col))
+			}
+		}		
 	}
 	return m
 }

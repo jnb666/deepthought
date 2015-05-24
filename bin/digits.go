@@ -20,19 +20,19 @@ const (
 
 func main() {
 	runtime.LockOSThread()
-	blas.Init(blas.Native64)
-	d, err := data.Load("mnist", 10000, 0)
+	blas.Init(blas.Native32)
+	d, err := data.Load("mnist", 10000)
 	checkErr(err)
 	fmt.Printf("loaded digits: %d training, %d test, %d validation\n",
 		d.Train.NumSamples, d.Test.NumSamples, d.Valid.NumSamples)
 	dataset := d.Test
-	dataset.Input[0].SetFormat("%.0f")
+	dataset.Input.SetFormat("%.0f")
 
 	window, err := mplot.NewWindow(width, height, "digits")
 	checkErr(err)
 	plt := make([]*mplot.Plot, rows*cols)
 	mat := make([]blas.Matrix, rows*cols)
-	labels := dataset.Classes[0].Data(blas.RowMajor)
+	labels := dataset.Classes.Data(blas.RowMajor)
 	for i := range plt {
 		mat[i] = blas.New(imgSize, imgSize)
 		plt[i] = mplot.New()
@@ -48,7 +48,7 @@ func main() {
 		for {
 			for i := range plt {
 				ix := page*rows*cols + i
-				mat[i].Copy(dataset.Input[0].Row(ix, ix+1).Reshape(imgSize, imgSize, true))
+				mat[i].Copy(dataset.Input.Row(ix, ix+1).Reshape(imgSize, imgSize, true))
 				//fmt.Printf("%d: \n%s\n", i, mat[i])
 				plt[i].Title.Text = fmt.Sprintf("test %d: %.0f", ix, labels[ix])
 			}

@@ -1,3 +1,4 @@
+// Package mplot provides graphics plotting routines using GL and gonum/plot.
 package mplot
 
 import (
@@ -76,11 +77,11 @@ func (w *Window) Draw(rows, cols int, plt ...*Plot) {
 		}
 		// rescale the axis limits
 		for _, r := range p.ranges {
-			xmin, xmax, ymin, ymax := r.DataRange()
-			p.X.Min = min(p.X.Min, xmin)
-			p.X.Max = max(p.X.Max, xmax)
-			p.Y.Min = min(p.Y.Min, ymin)
-			p.Y.Max = max(p.Y.Max, ymax)
+			p.X.Min, p.X.Max, p.Y.Min, p.Y.Max = r.DataRange()
+			//p.X.Min = min(p.X.Min, xmin)
+			//p.X.Max = max(p.X.Max, xmax)
+			//p.Y.Min = min(p.Y.Min, ymin)
+			//p.Y.Max = max(p.Y.Max, ymax)
 		}
 		p.Draw(c)
 	}

@@ -4,6 +4,7 @@ const ()
 
 const (
 	copyKernel = iota
+	copyIxKernel
 	setKernel
 	scaleKernel
 	addKernel
@@ -20,63 +21,72 @@ const (
 	numKernels
 )
 
-var name = []string{"copy", "set", "scale", "add", "cmp", "sum", "maxcol", "norm", "transpose",
-	"mul", "mulAT", "mulBT", "mulABT", "mulelem"}
+var name = []string{"copy", "copyIx", "set", "scale", "add", "cmp", "sum", "maxcol", "norm",
+	"transpose", "mul", "mulAT", "mulBT", "mulABT", "mulelem"}
 
 var srcHead = `
-// Header structure rows=.x cols=.y base=.z stride=.w
+// Matrix header structure
+typedef struct {
+	int rows, cols, base, stride;
+} Dims;
 
 #define ARG const int col=get_global_id(0); const int row=get_global_id(1);
 
-#define P(d, r, c) (d.z+d.w*(r)+(c))
+#define P(d, r, c) (d.base+d.stride*(r)+(c))
 `
 var unarySrc = `
-__kernel void unary(const int4 ad, const __global float* a, const int4 md, __global float* m) {
+__kernel void unary(const Dims ad, const __global float* a, const Dims md, __global float* m) {
 	ARG float x = a[P(ad,row,col)];
 `
 
 var binarySrc = `
-__kernel void binary(const int4 ad, const __global float* a, const int4 bd, const __global float* b, 
-		const int4 md, __global float* m) {
+__kernel void binary(const Dims ad, const __global float* a, const Dims bd, const __global float* b, 
+		const Dims md, __global float* m) {
 	ARG float x = a[P(ad,row,col)]; float y = b[P(bd,row,col)];
 `
 var source = `
-__kernel void copy(const int4 ad, const __global float* a, const int4 md, __global float* m) {
+__kernel void copy(const Dims ad, const __global float* a, const Dims md, __global float* m) {
 	ARG m[P(md,row,col)] = a[P(ad,row,col)];
 }
 
-__kernel void set(const float val, const int4 md, __global float* m) {
+__kernel void copyIx(const Dims ad, const __global float* a, const Dims id, __global float* ix, 
+		const Dims md, __global float* m) {
+	ARG int irow = ix[P(id,row,0)];
+	m[P(md,row,col)] = a[P(ad,irow,col)];
+}
+
+__kernel void set(const float val, const Dims md, __global float* m) {
 	ARG	m[P(md,row,col)] = val;
 }
 
-__kernel void scale(const float sc, const int4 md, __global float* m) {
+__kernel void scale(const float sc, const Dims md, __global float* m) {
 	ARG	m[P(md,row,col)] *= sc;
 }
 
-__kernel void add(const float sc, const int4 ad, const __global float* a, const int4 bd, const __global float* b, 
-		const int4 md, __global float* m) {
+__kernel void add(const float sc, const Dims ad, const __global float* a, const Dims bd, const __global float* b, 
+		const Dims md, __global float* m) {
 	ARG	m[P(md,row,col)] = a[P(ad,row,col)] + sc*b[P(bd,row,col)]; 
 }
 
-__kernel void cmp(const float eps, const int4 ad, const __global float* a, const int4 bd, const __global float* b, 
-		const int4 md, __global float* m) {
+__kernel void cmp(const float eps, const Dims ad, const __global float* a, const Dims bd, const __global float* b, 
+		const Dims md, __global float* m) {
 	ARG	m[P(md,row,col)] = fabs(a[P(ad,row,col)] - b[P(bd,row,col)]) > eps; 
 }
 
-__kernel void sum(const int4 md, const __global float* m, __global float* res) {
+__kernel void sum(const Dims md, const __global float* m, __global float* res) {
 	float sum = 0.f;
-	for (int r = 0; r < md.x; r++) {
-		for (int c = 0; c < md.y; c++) {
+	for (int r = 0; r < md.rows; r++) {
+		for (int c = 0; c < md.cols; c++) {
 			sum += m[P(md,r,c)];
 		}
 	}
 	*res = sum;
 }
 
-__kernel void maxcol(const int4 ad, const __global float* a, const int4 md, __global float* m) {
+__kernel void maxcol(const Dims ad, const __global float* a, const Dims md, __global float* m) {
 	int row = get_global_id(0); int maxcol = 0; 
 	float maxval = -1e38f; float v;
-	for (int c = 0; c < ad.y; c++) {	
+	for (int c = 0; c < ad.cols; c++) {	
 		if ((v = a[P(ad,row,c)]) > maxval) {
 			maxval = v; maxcol = c;
 		}
@@ -84,42 +94,43 @@ __kernel void maxcol(const int4 ad, const __global float* a, const int4 md, __gl
 	m[P(md,row,0)] = (float)maxcol;
 }
 
-__kernel void norm(const int4 ad, const __global float* a, const int4 md, __global float* m) {
+__kernel void norm(const Dims ad, const __global float* a, const Dims md, __global float* m) {
 	int row = get_global_id(0);
 	float sum = 0.f;
-	for (int c = 0; c < ad.y; c++) {	
+	for (int c = 0; c < ad.cols; c++) {	
 		sum += a[P(ad,row,c)];
 	}
-	for (int c = 0; c < ad.y; c++) {	
+	for (int c = 0; c < ad.cols; c++) {	
 		m[P(ad,row,c)] = a[P(ad,row,c)] / sum;
 	}
 }
 
-__kernel void mulelem(const int4 ad, const __global float* a, const int4 bd, const __global float* b, 
-		const int4 md, __global float* m) {
+__kernel void mulelem(const Dims ad, const __global float* a, const Dims bd, const __global float* b, 
+		const Dims md, __global float* m) {
 	ARG	m[P(md,row,col)] = a[P(ad,row,col)] * b[P(bd,row,col)];
 }
 
-__kernel void transpose(const int4 ad, const __global float* a, const int4 md, __global float* m) {
+__kernel void transpose(const Dims ad, const __global float* a, const Dims md, __global float* m) {
   	__local float buffer[TRBLK][TRBLK];
 	const int tx = get_local_id(0);
 	const int ty = get_local_id(1);
  	const int col = get_group_id(0)*TRBLK + tx;
 	const int row = get_group_id(1)*TRBLK + ty;
-	if (row < ad.x && col < ad.y) {
+	if (row < ad.rows && col < ad.cols) {
 		buffer[ty][tx] = a[P(ad,row,col)];
 	}
 	barrier(CLK_LOCAL_MEM_FENCE);
    	const int col2 = get_group_id(1)*TRBLK + ty;
 	const int row2 = get_group_id(0)*TRBLK + tx;
-	if (row2 < md.x && col2 < md.y) {
+	if (row2 < md.rows && col2 < md.cols) {
 		m[P(md,row2,col2)] = buffer[ty][tx];
 	}
 }
 
 #define RTS (TS/WPT)
 
-#define MHEAD __local float asub[TS][TS+1]; __local float bsub[TS][TS+1];\
+#define MHEAD \
+	__local float asub[TS][TS+1]; __local float bsub[TS][TS+1];\
 	const int tx = get_local_id(0);	const int ty = get_local_id(1);\
 	const int gx = TS*get_group_id(0); const int gy = TS*get_group_id(1);\
 	float asum[WPT*WPT] = {};
@@ -131,10 +142,10 @@ __kernel void transpose(const int4 ad, const __global float* a, const int4 md, _
 #define OPOS int2 pos = oTrans ? (int2)(gx+tx+wx*RTS, gy+ty+wy*RTS) : (int2)(gy+ty+wy*RTS, gx+tx+wx*RTS);
 
 // matrix multiply
-__kernel void mul(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
-		const int4 md, __global float* m, int oTrans) {
+__kernel void mul(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
+		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = ad.w;
+	int maxt = ad.stride;
 	for (int t = 0; t < maxt; t += TS) {
 		for (int w = 0; w < WPT*WPT; w++) {
 			MPOS
@@ -150,10 +161,10 @@ __kernel void mul(const int4 ad, const __global float* a, const int4 bd, const _
 }
 
 // a matrix transposed
-__kernel void mulAT(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
-		const int4 md, __global float* m, int oTrans) {
+__kernel void mulAT(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
+		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = (1 + (ad.x-1)/TS) * TS;
+	int maxt = (1 + (ad.rows-1)/TS) * TS;
 	for (int t = 0; t < maxt; t += TS) {
 		for (int w = 0; w < WPT*WPT; w++) {
 			MPOS
@@ -169,10 +180,10 @@ __kernel void mulAT(const int4 ad, const __global float* a, const int4 bd, const
 }
 
 // b matrix transposed
-__kernel void mulBT(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
-		const int4 md, __global float* m, int oTrans) {
+__kernel void mulBT(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
+		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = ad.w;
+	int maxt = ad.stride;
 	for (int t = 0; t < maxt; t += TS) {
 		for (int w = 0; w < WPT*WPT; w++) {
 			MPOS
@@ -188,10 +199,10 @@ __kernel void mulBT(const int4 ad, const __global float* a, const int4 bd, const
 }
 
 // a and b matrix transposed
-__kernel void mulABT(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
-		const int4 md, __global float* m, int oTrans) {
+__kernel void mulABT(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
+		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = bd.w;
+	int maxt = bd.stride;
 	for (int t = 0; t < maxt; t += TS) {
 		for (int w = 0; w < WPT*WPT; w++) {
 			MPOS
@@ -213,8 +224,8 @@ __kernel void mulABT(const int4 ad, const __global float* a, const int4 bd, cons
 #define LPTA ((TSK*TSY)/(RTSX*RTSY))
 #define LPTB ((TSK*TSX)/(RTSX*RTSY))
 
-__kernel void mul(const int4 ad, const __global float* a, const int4 bd, const __global float* b,
-		const int4 md, __global float* m) {
+__kernel void mul(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
+		const Dims md, __global float* m) {
 	const int tx = get_local_id(0);
 	const int ty = get_local_id(1);
 	const int offX = TSX*get_group_id(0);

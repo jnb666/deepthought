@@ -25,10 +25,11 @@ func (img *Image) Plot(c draw.Canvas, plt *plot.Plot) {
 	trX, trY := plt.Transforms(&c)
 	j := 0
 	pts := make([]draw.Point, 4)
+	rows, cols := img.Rows(), img.Cols()
 	var x0, y0, x1, y1 vg.Length
-	for iy := 0; iy < img.Rows(); iy++ {
-		y0, y1 = trY(float64(iy)), trY(float64(iy+1))+1
-		for ix := 0; ix < img.Cols(); ix++ {
+	for iy := 0; iy < rows; iy++ {
+		y0, y1 = trY(float64(rows-iy-1)), trY(float64(rows-iy))+1
+		for ix := 0; ix < cols; ix++ {
 			x0, x1 = trX(float64(ix)), trX(float64(ix+1))+1
 			shade := uint8(255 * data[j])
 			colour := color.RGBA{shade, shade, shade, 255}

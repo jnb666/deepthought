@@ -71,6 +71,10 @@ func (v *Vector) XY(i int) (x, y float64) {
 
 // DataRange implements the plot.DataRanger interface.
 func (v *Vector) DataRange() (xmin, xmax, ymin, ymax float64) {
+	// zoom in automatically
+	if v.size > 1 && v.max > 2*v.Last() {
+		v.max = 2 * v.Last()
+	}
 	return 0, float64(v.Cap() - 1), v.min, v.max
 }
 

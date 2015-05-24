@@ -1,3 +1,4 @@
+// Package blas contains linear algebra routines for matrix manipulation with optional OpenCL acceleration.
 package blas
 
 //go:generate gentype -struct native32 -type float32 native.tmpl native32.go
@@ -29,7 +30,7 @@ type Matrix interface {
 	Cols() int
 	Size() int
 	Release()
-	Copy(m Matrix) Matrix
+	Copy(m, ix Matrix) Matrix
 	Transpose(m Matrix) Matrix
 	Reshape(rows, cols int, shrink bool) Matrix
 	Set(val float64) Matrix

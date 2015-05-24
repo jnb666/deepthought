@@ -8,35 +8,35 @@ import (
 	"github.com/jnb666/deepthought/network"
 )
 
-var (
-	threshold = 0.0065
-	maxEpoch  = 50
-	learnRate = 3.0
-	batchSize = 100
-	samples   = 50000
-	nHidden   = 30
-)
+const hiddenNodes = 30
+
+var cfg = Config{
+	TrainRuns: 10,
+	MaxEpoch:  50,
+	BatchSize: 100,
+	LearnRate: 3.0,
+	Threshold: 0.0065,
+	LogEvery:  1,
+}
 
 // load the data and setup the network with one hidden layer
 func setup() (*data.Dataset, *network.Network) {
 	network.Init(blas.OpenCL32)
-	d, err := data.Load("mnist", samples, batchSize)
+	d, err := data.Load("mnist", 0)
 	checkErr(err)
 
-	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with quadratic cost and sigmoid activation, eta=%.g, batch size=%d\n\n",
-		d.NumInputs, nHidden, d.NumOutputs, learnRate, batchSize)
+	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with quadratic cost and sigmoid activation\n%s\n\n",
+		d.NumInputs, hiddenNodes, d.NumOutputs, cfg)
 
-	net := network.NewNetwork(batchSize)
-	net.AddLayer(d.NumInputs, nHidden, network.Linear)
-	net.AddLayer(nHidden, d.NumOutputs, network.Sigmoid)
-	net.QuadraticOutput(d.NumOutputs, network.Sigmoid)
-	if debug {
+	net := network.New(cfg.BatchSize)
+	net.AddLayer(d.NumInputs, hiddenNodes, network.Linear)
+	net.AddLayer(hiddenNodes, d.NumOutputs, network.Sigmoid)
+	net.AddQuadraticOutput(d.NumOutputs, network.Sigmoid)
+	if cfg.Debug {
 		for _, l := range net.Nodes[:net.Layers-1] {
 			l.Weights().SetFormat("%c")
 		}
 		net.CheckGradient(1, 1e-6, 8, 1.5)
 	}
-	net.TestBatches(100)
-	logEvery = 1
 	return d, net
 }

@@ -1,3 +1,4 @@
+// Package xor loads the dataset for an xor gate.
 package xor
 
 import (
@@ -12,25 +13,25 @@ const (
 
 // register dataset when module is imported
 func init() {
-	data.Register["xor"] = loader{}
+	data.Register["xor"] = Loader{}
 }
 
-type loader struct{}
+type Loader struct{}
 
 // Load function loads and returns the xor dataset.
 // samples is ignored, aleays returns 4 records
-func (loader) Load(samples, batch int) (s *data.Dataset, err error) {
+func (Loader) Load(samples int) (s *data.Dataset, err error) {
 	s = new(data.Dataset)
 	s.MaxSamples = 4
 	s.NumInputs = 2
 	s.NumOutputs = 1
 	s.Train = new(data.Data)
 	s.Train.NumSamples = 4
-	s.Train.Input = []blas.Matrix{blas.New(4, 2).Load(blas.RowMajor, c0, c0, c0, c1, c1, c0, c1, c1)}
-	s.Train.Output = []blas.Matrix{blas.New(4, 1).Load(blas.RowMajor, c0, c1, c1, c0)}
-	s.Train.Classes = []blas.Matrix{blas.New(4, 1).Load(blas.RowMajor, 0, 1, 1, 0)}
+	s.Train.Input = blas.New(4, 2).Load(blas.RowMajor, c0, c0, c0, c1, c1, c0, c1, c1)
+	s.Train.Output = blas.New(4, 1).Load(blas.RowMajor, c0, c1, c1, c0)
+	s.Train.Classes = blas.New(4, 1).Load(blas.RowMajor, 0, 1, 1, 0)
 	if blas.Implementation() == blas.OpenCL32 {
-		s.OutputToClass = blas.NewUnaryCL("x > 0.f")
+		s.OutputToClass = blas.NewUnaryCL("float y = x > 0.f;")
 	} else {
 		s.OutputToClass = blas.Unary64(func(x float64) float64 {
 			if x > 0 {

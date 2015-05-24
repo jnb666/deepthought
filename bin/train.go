@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"reflect"
 	"runtime"
+	"strings"
+	"time"
 
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/mplot"
 	"github.com/jnb666/deepthought/network"
@@ -17,14 +21,29 @@ const (
 	height = 800
 )
 
-var (
-	debug     = false
-	batch     = false
-	logEvery  = 0
-	trainRuns = 10
-	seed      = int64(1)
-	prevCost  *buffer
-)
+type Config struct {
+	TrainRuns   int     // number of training runs: required
+	MaxEpoch    int     // maximum epoch: required
+	LearnRate   float64 // learning rate eta: required
+	WeightDecay float64 // weight decay epsilon
+	Momentum    float64 // momentum term used in weight updates
+	Threshold   float64 // target cost threshold
+	BatchSize   int     // minibatch size
+	StopAfter   int     // stop after n epochs with no improvement
+	LogEvery    int     // log stats every n epochs
+	RandomSeed  int64   // random number seed - set randomly if zero
+	BatchMode   bool    // turns off plotting
+	Debug       bool    // enable debug printing
+}
+
+func (c Config) String() string {
+	s := reflect.ValueOf(&c).Elem()
+	str := make([]string, s.NumField())
+	for i := 0; i < s.NumField(); i++ {
+		str[i] = fmt.Sprintf("%12s : %v", s.Type().Field(i).Name, s.Field(i).Interface())
+	}
+	return strings.Join(str, "\n")
+}
 
 // exit if fatal error
 func checkErr(err error) {
@@ -34,94 +53,68 @@ func checkErr(err error) {
 	}
 }
 
-// holds cost over last n generations
-type buffer struct {
-	data []float64
-	size int
-}
-
-func newBuffer(size int) *buffer {
-	return &buffer{data: make([]float64, size)}
-}
-
-func (b *buffer) push(v float64) {
-	if b.size < len(b.data) {
-		b.data[b.size] = v
-		b.size++
-	} else {
-		copy(b.data, b.data[1:])
-		b.data[b.size-1] = v
-	}
-}
-
-func (b *buffer) max() (m float64, ok bool) {
-	if len(b.data) == b.size {
-		ok = true
-		for _, v := range b.data {
-			if v > m {
-				m = v
-			}
+// returns function with stopping criteria
+func stopCriteria() func(*network.Stats) bool {
+	prevCost := network.NewBuffer(cfg.StopAfter)
+	return func(s *network.Stats) bool {
+		var cost float64
+		if s.Valid.Error.Len() > 0 {
+			cost = s.Valid.Error.Last()
+		} else {
+			cost = s.Train.Error.Last()
 		}
+		var done bool
+		if s.Epoch >= cfg.MaxEpoch || cost <= cfg.Threshold {
+			done = true
+		} else if cfg.StopAfter > 0 {
+			if s.Epoch > cfg.StopAfter {
+				done = cost > prevCost.Max()
+			}
+			prevCost.Push(cost)
+		}
+		if cfg.LogEvery > 0 && (s.Epoch%cfg.LogEvery == 0 || done) {
+			fmt.Println(s)
+		}
+		return done
 	}
-	return
-}
-
-// return function with stopping criteria
-func stopCriteria(s *network.Stats) bool {
-	var cost float64
-	if s.Valid.Error.Len() > 0 {
-		cost = s.Valid.Error.Last()
-	} else {
-		cost = s.Train.Error.Last()
-	}
-	var done bool
-	if s.Epoch >= maxEpoch || cost <= threshold {
-		done = true
-	} else if stopAfter > 0 {
-		maxCost, ok := prevCost.max()
-		done = ok && cost > maxCost
-		prevCost.push(cost)
-	}
-	if logEvery > 0 && (s.Epoch%logEvery == 0 || done) {
-		fmt.Println(s)
-	}
-	return done
 }
 
 // train the network
 func train(net *network.Network, data *data.Dataset, s *network.Stats) {
 	failed := 0
-	for run := 0; run < trainRuns; run++ {
-		if !batch && run > 0 {
-			fmt.Print("hit return for next run")
-			fmt.Fscanln(os.Stdin)
+	sampler := network.UniformSampler(data.Train.NumSamples)
+	if cfg.BatchSize > 0 && data.Train.NumSamples > cfg.BatchSize {
+		sampler = network.RandomSampler(data.Train.NumSamples)
+	}
+	for run := 0; run < cfg.TrainRuns; run++ {
+		if !cfg.BatchMode && run > 0 {
+			time.Sleep(5 * time.Second)
 		}
-		prevCost = newBuffer(stopAfter)
 		net.SetRandomWeights()
-		if debug {
+		if cfg.Debug {
 			fmt.Println(net)
 		}
-		epoch := net.Train(data, learnRate, s, stopCriteria)
+		epoch := net.Train(data, sampler, cfg.LearnRate, cfg.WeightDecay, cfg.Momentum, s, stopCriteria())
 		status := "**SUCCESS**"
-		if epoch >= maxEpoch-1 {
+		if epoch >= cfg.MaxEpoch-1 {
 			status = "**FAILED **"
 			failed++
 		}
-		fmt.Printf("%s  epochs=%4d  run time=%.2gs  reg error=%.4f  class error=%.1f%%\n",
+		fmt.Printf("%s  epochs=%4d  run time=%.2fs  reg error=%.4f  class error=%.1f%%\n",
 			status, epoch, s.RunTime.Last(), s.RegError.Last(), 100*s.ClsError.Last())
-		if debug {
+		if cfg.Debug {
 			fmt.Println(net)
-			//fmt.Println(net.FeedForward(data.Train.Input))
 		}
 	}
 	fmt.Printf("\n== success rate: %.0f%% ==\nnum epochs:  %s\nrun time:    %s\nreg error:   %s\nclass error: %s\n",
-		100*float64(trainRuns-failed)/float64(trainRuns), s.NumEpochs, s.RunTime, s.RegError, s.ClsError)
+		100*float64(cfg.TrainRuns-failed)/float64(cfg.TrainRuns), s.NumEpochs, s.RunTime, s.RegError, s.ClsError)
+	sampler.Release()
 }
 
 // setup the plots
 func createPlots(stats *network.Stats, d *data.Dataset) (rows, cols int, plots []*mplot.Plot) {
 	p1 := mplot.New()
-	p1.Title.Text = fmt.Sprintf("Learning rate = %g", learnRate)
+	p1.Title.Text = fmt.Sprintf("Learning rate = %g", cfg.LearnRate)
 	pError, pClass := stats.ErrorPlots(d)
 	p1.X.Label.Text = "epoch"
 	p1.Y.Label.Text = "cost function"
@@ -147,23 +140,22 @@ func createPlots(stats *network.Stats, d *data.Dataset) (rows, cols int, plots [
 
 func main() {
 	// get params
-	flag.BoolVar(&debug, "debug", debug, "enable debug printing and gradient checks")
-	flag.BoolVar(&batch, "batch", batch, "set batch mode to disable plotting")
-	flag.Int64Var(&seed, "seed", seed, "random number seed - or 0 to use current time")
-	flag.IntVar(&maxEpoch, "epochs", maxEpoch, "maximum number of epochs")
-	flag.IntVar(&logEvery, "log", logEvery, "log stats every n epochs or only at end of run if 0")
-	flag.IntVar(&trainRuns, "runs", trainRuns, "no. of training runs")
-	flag.Float64Var(&learnRate, "eta", learnRate, "network learning rate")
+	flag.BoolVar(&cfg.Debug, "debug", cfg.Debug, "enable debug printing and gradient checks")
+	flag.BoolVar(&cfg.BatchMode, "batch", cfg.BatchMode, "set batch mode to disable plotting")
+	flag.Int64Var(&cfg.RandomSeed, "seed", cfg.RandomSeed, "random number seed - or 0 to use current time")
+	flag.IntVar(&cfg.MaxEpoch, "epochs", cfg.MaxEpoch, "maximum number of epochs")
+	flag.IntVar(&cfg.LogEvery, "log", cfg.LogEvery, "log stats every n epochs or only at end of run if 0")
+	flag.IntVar(&cfg.TrainRuns, "runs", cfg.TrainRuns, "no. of training runs")
+	flag.Float64Var(&cfg.LearnRate, "eta", cfg.LearnRate, "network learning rate")
 	flag.Parse()
-	if !batch {
+	if !cfg.BatchMode {
 		runtime.LockOSThread()
 	}
-	network.Debug = debug
+	cfg.RandomSeed = network.SeedRandom(cfg.RandomSeed)
 
 	// setup the network
-	network.SeedRandom(seed)
 	data, net := setup()
-	stats := network.NewStats(maxEpoch, trainRuns)
+	stats := network.NewStats(cfg.MaxEpoch, cfg.TrainRuns)
 
 	// run cleanup handler on exit
 	c := make(chan os.Signal, 10)
@@ -171,10 +163,11 @@ func main() {
 	go func() {
 		<-c
 		net.Release()
+		blas.Release()
 		os.Exit(1)
 	}()
 
-	if batch {
+	if cfg.BatchMode {
 		train(net, data, stats)
 	} else {
 		window, err := mplot.NewWindow(width, height, "trainer")
@@ -186,4 +179,5 @@ func main() {
 		}
 	}
 	net.Release()
+	blas.Release()
 }
