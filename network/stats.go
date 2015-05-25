@@ -7,10 +7,7 @@ import (
 	"time"
 )
 
-const (
-	ymin = 0.0
-	ymax = 0.01
-)
+const nbins = 100
 
 // Stats struct has matrix with error on each set over time
 type Stats struct {
@@ -32,28 +29,30 @@ type StatsData struct {
 	ClassError    *mplot.Vector
 	AvgError      *mplot.Vector
 	AvgClassError *mplot.Vector
+	ErrorHist     *mplot.Histogram
 }
 
 // NewStats function initialises the stats matrices
-func NewStats(nepoch, nruns int) *Stats {
+func NewStats(nepoch, nruns int, ymax float64) *Stats {
 	return &Stats{
 		Epoch:     1,
-		Test:      newStatsData(nepoch),
-		Train:     newStatsData(nepoch),
-		Valid:     newStatsData(nepoch),
-		NumEpochs: mplot.NewStatsVector(nruns, ymin, ymax),
-		RunTime:   mplot.NewStatsVector(nruns, ymin, ymax),
-		RegError:  mplot.NewStatsVector(nruns, ymin, ymax),
-		ClsError:  mplot.NewStatsVector(nruns, ymin, ymax),
+		Test:      newStatsData(nepoch, ymax),
+		Train:     newStatsData(nepoch, ymax),
+		Valid:     newStatsData(nepoch, ymax),
+		NumEpochs: mplot.NewStatsVector(nruns),
+		RunTime:   mplot.NewStatsVector(nruns),
+		RegError:  mplot.NewStatsVector(nruns),
+		ClsError:  mplot.NewStatsVector(nruns),
 	}
 }
 
-func newStatsData(nepoch int) StatsData {
+func newStatsData(nepoch int, ymax float64) StatsData {
 	return StatsData{
-		Error:         mplot.NewVector(nepoch, ymin, ymax),
-		ClassError:    mplot.NewVector(nepoch, ymin, ymax),
-		AvgError:      mplot.NewVector(nepoch, ymin, ymax),
-		AvgClassError: mplot.NewVector(nepoch, ymin, ymax),
+		Error:         mplot.NewVector(nepoch),
+		ClassError:    mplot.NewVector(nepoch),
+		AvgError:      mplot.NewVector(nepoch),
+		AvgClassError: mplot.NewVector(nepoch),
+		ErrorHist:     mplot.NewHistogram(nbins, 0, ymax),
 	}
 }
 
@@ -118,7 +117,7 @@ func (s StatsData) update(n *Network, ix int, d *data.Data, samples int) int {
 	if samples == 0 || samples > d.NumSamples {
 		samples = d.NumSamples
 	}
-	totalError, classError := n.GetError(d, samples)
+	totalError, classError := n.GetError(samples, d, s.ErrorHist)
 	s.Error.Set(ix, totalError)
 	s.ClassError.Set(ix, classError)
 	s.AvgError.Set(ix, totalError)
@@ -126,7 +125,7 @@ func (s StatsData) update(n *Network, ix int, d *data.Data, samples int) int {
 	return samples
 }
 
-// ErrorPlots method returns a line plots for each error curve
+// ErrorPlots method returns line plots for each error curve
 func (s *Stats) ErrorPlots(d *data.Dataset) (p1, p2 []*mplot.Line) {
 	if d.Train != nil {
 		p1 = append(p1, mplot.NewLine(s.Train.Error, "training"))
@@ -141,4 +140,11 @@ func (s *Stats) ErrorPlots(d *data.Dataset) (p1, p2 []*mplot.Line) {
 		p2 = append(p2, mplot.NewLine(s.Test.ClassError, "test set"))
 	}
 	return
+}
+
+// Release resources
+func (s *Stats) Release() {
+	s.Train.ErrorHist.Release()
+	s.Test.ErrorHist.Release()
+	s.Valid.ErrorHist.Release()
 }

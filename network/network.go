@@ -165,19 +165,24 @@ func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 // samples parameter is the maximum number of samples to check.
-func (n *Network) GetError(d *data.Data, samples int) (totalErr, classErr float64) {
-	costFn := n.Nodes[n.Layers-1].Cost
-	cols := float64(d.Output.Cols())
+func (n *Network) GetError(samples int, d *data.Data, errorHist *mplot.Histogram) (totalErr, classErr float64) {
 	totalError := new(mplot.RunningStat)
 	classError := new(mplot.RunningStat)
+	cols := d.Output.Cols()
 	rows := n.BatchSize
 	if rows > samples {
 		rows = samples
 	}
+	// use double buffering to update
+	buf := 1 - errorHist.Buffer
+	errorHist.Col(buf, buf+1).Set(0)
 	for ix := 0; ix < samples; ix += rows {
-		// get cost
+		// get cost per sample
 		output := n.FeedForward(d.Input.Row(ix, ix+rows))
-		totalError.Push(costFn(d.Output.Row(ix, ix+rows)) / cols)
+		cost := n.Nodes[n.Layers-1].Cost(d.Output.Row(ix, ix+rows))
+		errorHist.Update(cost, buf)
+		// average error over dataset
+		totalError.Push(cost.Sum() / float64(rows*cols))
 		// get classification error
 		n.out2class.Apply(output, n.classes)
 		n.classes.Cmp(n.classes, d.Classes.Row(ix, ix+rows), epsilon)
@@ -186,6 +191,7 @@ func (n *Network) GetError(d *data.Data, samples int) (totalErr, classErr float6
 			fmt.Printf("\rtest batch: %d/%d        ", ix+rows, samples)
 		}
 	}
+	errorHist.Buffer = buf
 	if n.Verbose {
 		fmt.Print("\r")
 	}
@@ -204,6 +210,7 @@ func (n *Network) CheckGradient(nepochs int, maxError float64, samples int, scal
 
 func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 	output := n.Nodes[n.Layers-1]
+	rows := float64(input.Rows())
 	ok = true
 	for nlayer, layer := range n.Nodes[:n.Layers-1] {
 		w := layer.Weights()
@@ -224,11 +231,11 @@ func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 			weight[ix] = val - epsilon
 			w.Load(blas.RowMajor, weight...)
 			n.FeedForward(input)
-			cost1 := output.Cost(target) * n.checkScale
+			cost1 := output.Cost(target).Sum() * n.checkScale / rows
 			weight[ix] = val + epsilon
 			w.Load(blas.RowMajor, weight...)
 			n.FeedForward(input)
-			cost2 := output.Cost(target) * n.checkScale
+			cost2 := output.Cost(target).Sum() * n.checkScale / rows
 			grads[i] = gradData[ix]
 			projs[i] = (cost1 - cost2) / (2 * epsilon)
 			divisor := math.Abs(grads[i]) + math.Abs(projs[i])

@@ -298,11 +298,25 @@ func TestApply(t *testing.T) {
 func TestSum(t *testing.T) {
 	m := New(5, 3).Load(RowMajor, 1, 2, 3, 4)
 	m.SetFormat("%3.0f")
-	t.Logf("\n%s\n", m)
+	t.Logf("m\n%s\n", m)
 	sum := m.Sum()
 	t.Log("sum = ", sum)
 	if sum != 36 {
 		t.Error("wrong sum!")
+	}
+	m2 := New(20, 20).Load(RowMajor, 1, 2, 3)
+	m2.SetFormat("%3.0f")
+	t.Logf("m2\n%s\n", m2)
+	sum = m2.Sum()
+	t.Log("sum = ", sum)
+	if sum != 799 {
+		t.Error("wrong sum!")
+	}
+	m2.SumRows(m)
+	t.Logf("m2\n%s\n", m2)
+	expect := []float64{6, 7, 8, 9, 6}
+	if m2.Rows() != m.Rows() || m2.Cols() != 1 || !reflect.DeepEqual(m2.Data(ColMajor), expect) {
+		t.Error("wrong SumRows!")
 	}
 	m.Release()
 }
@@ -335,6 +349,19 @@ func TestNorm(t *testing.T) {
 		}
 	}
 	m.Release()
+}
+
+func TestHistogram(t *testing.T) {
+	m := New(10, 1).Load(ColMajor, 5, 3, 1, 1, 1, 2, 2, 3, 4, 5)
+	m.SetFormat("%3.0f")
+	t.Logf("m\n%s\n", m)
+	h := New(5, 1).Histogram(m, 5, 0.5, 5.5)
+	h.SetFormat("%3.0f")
+	t.Logf("hist\n%s\n", h)
+	expect := []float64{3, 2, 2, 1, 2}
+	if !reflect.DeepEqual(h.Data(ColMajor), expect) {
+		t.Error("expected", expect)
+	}
 }
 
 var m0 Matrix
@@ -376,5 +403,15 @@ func BenchmarkMul(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		m0.Mul(m1, m2, false, false, false)
 		Sync()
+	}
+}
+
+var total float64
+
+func BenchmarkSum(b *testing.B) {
+	rows, cols := 1024, 1024
+	m0 := New(rows, cols).Load(RowMajor, randSlice(rows*cols)...)
+	for i := 0; i < b.N; i++ {
+		total = m0.Sum()
 	}
 }

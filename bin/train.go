@@ -28,6 +28,7 @@ type Config struct {
 	WeightDecay float64 // weight decay epsilon
 	Momentum    float64 // momentum term used in weight updates
 	Threshold   float64 // target cost threshold
+	PlotMax     float64 // maximum error value for plots / histograms
 	BatchSize   int     // minibatch size
 	StopAfter   int     // stop after n epochs with no improvement
 	LogEvery    int     // log stats every n epochs
@@ -124,10 +125,15 @@ func createPlots(stats *network.Stats, d *data.Dataset) (rows, cols int, plots [
 	p2.Y.Label.Text = "classification error"
 	mplot.AddLines(p2, pClass...)
 	p3 := mplot.New()
-	p3.Title.Text = "Mean value over runs"
-	p3.X.Label.Text = "run number"
-	p3.Y.Label.Text = "run time (s)"
-	mplot.AddLines(p3, mplot.NewLine(stats.RunTime.Vector, ""))
+	mplot.AddHist(p3, stats.Valid.ErrorHist)
+	p3.X.Label.Text = "validation cost"
+	p3.Y.Label.Text = "freqeuncy"
+	/*
+		p3.Title.Text = "Mean value over runs"
+		p3.X.Label.Text = "run number"
+		p3.Y.Label.Text = "run time (s)"
+		mplot.AddLines(p3, mplot.NewLine(stats.RunTime.Vector, ""))
+	*/
 	p4 := mplot.New()
 	p4.X.Label.Text = "run number"
 	p4.Y.Label.Text = "average test error"
@@ -155,15 +161,23 @@ func main() {
 
 	// setup the network
 	data, net := setup()
-	stats := network.NewStats(cfg.MaxEpoch, cfg.TrainRuns)
+	if cfg.PlotMax == 0 {
+		cfg.PlotMax = 1
+	}
+	stats := network.NewStats(cfg.MaxEpoch, cfg.TrainRuns, cfg.PlotMax)
+
+	cleanup := func() {
+		stats.Release()
+		net.Release()
+		blas.Release()
+	}
 
 	// run cleanup handler on exit
 	c := make(chan os.Signal, 10)
 	signal.Notify(c, os.Interrupt)
 	go func() {
 		<-c
-		net.Release()
-		blas.Release()
+		cleanup()
 		os.Exit(1)
 	}()
 
@@ -178,6 +192,5 @@ func main() {
 			window.Draw(rows, cols, plt...)
 		}
 	}
-	net.Release()
-	blas.Release()
+	cleanup()
 }

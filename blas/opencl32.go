@@ -44,8 +44,14 @@ func initCL() {
 	fmt.Println("Init OpenCL:", hw)
 	sw = make([]*scl.Software, numKernels)
 	opts := fmt.Sprintf("-D TRBLK=%d -D TS=%d -D WPT=%d", trBlock, mulBlock, mulBlock/mulWG)
+	var src string
 	for i := range sw {
-		if sw[i], err = scl.Compile(hw, srcHead+source, name[i], opts); err != nil {
+		if i >= mulKernel {
+			src = srcHead + mulHead + source[i]
+		} else {
+			src = srcHead + source[i]
+		}
+		if sw[i], err = scl.Compile(hw, src, name[i], opts); err != nil {
 			panic(fmt.Sprintf("error compiling %s : %s", name[i], err))
 		}
 	}
@@ -344,18 +350,43 @@ func (m *opencl32) Mul(m1, m2 Matrix, aTrans, bTrans, oTrans bool) Matrix {
 
 // Sum method calculates the sum of the values in the matrix
 func (m *opencl32) Sum() float64 {
-	var sum float32
-	res := scl.NewBuffer(hw, cl.MEM_WRITE_ONLY, wSize, &sum)
+	gx := 1 + (int(m.cols)-1)/trBlock
+	gy := 1 + (int(m.rows)-1)/trBlock
+	sums := make([]float32, gx*gy)
+	res := scl.NewBuffer(hw, cl.MEM_WRITE_ONLY, wSize*gx*gy, sums)
 	defer res.Release()
 	k := sw[sumKernel]
 	setArgMatrix(k, 0, m)
 	k.SetArgBuffer(2, res)
-	err := k.EnqueueKernel(hw, []uint64{1}, nil, true)
+	gSize := []uint64{trBlock * uint64(gx), trBlock * uint64(gy)}
+	lSize := []uint64{trBlock, trBlock}
+	err := k.EnqueueKernel(hw, gSize, lSize, true)
 	if err != nil {
 		panic(err)
 	}
-	res.Read(hw)
+	clErr := res.Read(hw)
+	if clErr != cl.SUCCESS {
+		panic(cl.ErrToStr(clErr))
+	}
+	sum := float32(0)
+	for _, s := range sums {
+		sum += s
+	}
 	return float64(sum)
+}
+
+// SumRows method returns a column vector with the sum of each row.
+func (m *opencl32) SumRows(in Matrix) Matrix {
+	a := in.(*opencl32)
+	m.reshape(a.rows, 1, false)
+	k := sw[sumRowsKernel]
+	setArgMatrix(k, 0, a)
+	setArgMatrix(k, 2, m)
+	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
+	if err != nil {
+		panic(err)
+	}
+	return m
 }
 
 // MaxCol method gets the column number with the maximim value for each row of the input matrix.
@@ -380,6 +411,27 @@ func (m *opencl32) Norm(in Matrix) Matrix {
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
 	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+// Histogram method adds bins the values from the input column vector and adds to the histogram.
+func (m *opencl32) Histogram(in Matrix, bins int, min, max float64) Matrix {
+	a := in.(*opencl32)
+	ibins := int32(bins)
+	fmin := float32(min)
+	scale := float32(bins) / float32(max-min)
+	m.reshape(ibins, 1, false)
+	k := sw[histKernel]
+	k.SetArg(0, wSize, unsafe.Pointer(&ibins))
+	k.SetArg(1, wSize, unsafe.Pointer(&fmin))
+	k.SetArg(2, wSize, unsafe.Pointer(&scale))
+	setArgMatrix(k, 3, a)
+	setArgMatrix(k, 5, m)
+	k.SetArg(7, uint64(wSize*bins), nil)
+	err := k.EnqueueKernel(hw, []uint64{uint64(a.rows)}, nil, false)
 	if err != nil {
 		panic(err)
 	}

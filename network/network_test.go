@@ -55,7 +55,7 @@ func TestTrain(t *testing.T) {
 	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
 	t.Log(net)
-	stats := NewStats(maxEpoch, 1)
+	stats := NewStats(maxEpoch, 1, 1.0)
 	stopFunc := func(s *Stats) bool {
 		done := s.Epoch >= maxEpoch || s.Valid.Error.Last() < 0.1
 		if s.Epoch%10 == 0 || done {

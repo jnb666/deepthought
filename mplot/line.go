@@ -5,6 +5,7 @@ import (
 	"github.com/gonum/plot/plotter"
 	"github.com/gonum/plot/vg/draw"
 	"image/color"
+	"math"
 )
 
 var DefaultColors = []color.Color{
@@ -58,6 +59,17 @@ func (l *Line) Plot(c draw.Canvas, plt *plot.Plot) {
 		ps[i].Y = trY(y)
 	}
 	c.StrokeLines(l.LineStyle, c.ClipLinesXY(ps)...)
+}
+
+// DataRange implements the plot.DataRanger interface.
+func (l *Line) DataRange() (xmin, xmax, ymin, ymax float64) {
+	xmin, xmax, ymin = 0, float64(l.Cap()-1), 0
+	yval := l.max
+	if l.Len() > 1 && 2*l.Last() < yval {
+		yval = 2 * l.Last()
+	}
+	ymax = math.Pow(2, math.Ceil(math.Log2(yval)))
+	return
 }
 
 // Thumbnail implements the plot.Thumbnailer interface.

@@ -44,8 +44,10 @@ type Matrix interface {
 	Mul(a, b Matrix, aTrans, bTrans, oTrans bool) Matrix
 	MulElem(a, b Matrix) Matrix
 	Sum() float64
+	SumRows(a Matrix) Matrix
 	MaxCol(m Matrix) Matrix
 	Norm(m Matrix) Matrix
+	Histogram(m Matrix, bins int, min, max float64) Matrix
 	SetFormat(string)
 	String() string
 }

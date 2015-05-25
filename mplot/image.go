@@ -1,7 +1,6 @@
 package mplot
 
 import (
-	//"fmt"
 	"github.com/gonum/plot"
 	"github.com/gonum/plot/vg"
 	"github.com/gonum/plot/vg/draw"

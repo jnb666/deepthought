@@ -11,7 +11,7 @@ type Layer interface {
 	BackProp(err blas.Matrix, momentum float64) blas.Matrix
 	Weights() blas.Matrix
 	Gradient() blas.Matrix
-	Cost(t blas.Matrix) float64
+	Cost(t blas.Matrix) blas.Matrix
 	Release()
 }
 
@@ -65,7 +65,7 @@ func (l *layer) Weights() blas.Matrix { return l.weights }
 
 func (l *layer) Gradient() blas.Matrix { return l.gradient }
 
-func (l *layer) Cost(t blas.Matrix) float64 { panic("no cost for input or hidden layer!") }
+func (l *layer) Cost(t blas.Matrix) blas.Matrix { panic("no cost for input or hidden layer!") }
 
 func (l *layer) FeedForward(in blas.Matrix) blas.Matrix {
 	l.activ.Func.Apply(in, l.input)
@@ -101,6 +101,7 @@ type outLayer struct {
 	values blas.Matrix // Z matrix of values at each node [samples, nodes]
 	delta  blas.Matrix // D matrix of errors at each node [samples, nodes]
 	deriv  blas.Matrix // Fp matrix of derivative of activation fn [nin, samples]
+	costs  blas.Matrix // cost for each sample in data set [samples, 1]
 	temp   blas.Matrix
 	cost   blas.BinaryFunction
 }
@@ -110,6 +111,7 @@ func newOutLayer(batch, nodes int, a Activation) *outLayer {
 		activ:  a,
 		values: blas.New(batch, nodes),
 		delta:  blas.New(batch, nodes),
+		costs:  blas.New(batch, 1),
 		temp:   blas.New(batch, nodes),
 	}
 	if a.Deriv != nil {
@@ -147,9 +149,9 @@ func (l *outLayer) BackProp(target blas.Matrix, momentum float64) blas.Matrix {
 	return l.delta
 }
 
-func (l *outLayer) Cost(target blas.Matrix) float64 {
+func (l *outLayer) Cost(target blas.Matrix) blas.Matrix {
 	l.cost.Apply(l.values, target, l.temp)
-	return l.temp.Sum() / float64(target.Rows())
+	return l.costs.SumRows(l.temp)
 }
 
 // AddQuadraticOutput method appends a quadratic cost output layer to the network.

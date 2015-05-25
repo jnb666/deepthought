@@ -11,12 +11,13 @@ import (
 const hiddenNodes = 30
 
 var cfg = Config{
-	TrainRuns: 10,
+	TrainRuns: 5,
 	MaxEpoch:  50,
 	BatchSize: 100,
 	LearnRate: 3.0,
-	Threshold: 0.0065,
-	LogEvery:  1,
+	Threshold: 0.0067,
+	LogEvery:  5,
+	PlotMax:   0.1,
 }
 
 // load the data and setup the network with one hidden layer

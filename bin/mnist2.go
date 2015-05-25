@@ -18,6 +18,7 @@ var cfg = Config{
 	Momentum:  0.7,
 	StopAfter: 8,
 	LogEvery:  5,
+	PlotMax:   0.1,
 }
 
 // load the data and setup the network with one hidden layer

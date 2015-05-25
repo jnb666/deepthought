@@ -15,12 +15,10 @@ type Vector struct {
 }
 
 // NewVector creates a new empty vector with the given capacity and range
-func NewVector(capacity int, min, max float64) *Vector {
+func NewVector(capacity int) *Vector {
 	return &Vector{
 		data:    make([]float64, capacity),
 		samples: make([]int, capacity),
-		min:     min,
-		max:     max,
 	}
 }
 
@@ -69,15 +67,6 @@ func (v *Vector) XY(i int) (x, y float64) {
 	return float64(i), v.data[i]
 }
 
-// DataRange implements the plot.DataRanger interface.
-func (v *Vector) DataRange() (xmin, xmax, ymin, ymax float64) {
-	// zoom in automatically
-	if v.size > 1 && v.max > 2*v.Last() {
-		v.max = 2 * v.Last()
-	}
-	return 0, float64(v.Cap() - 1), v.min, v.max
-}
-
 func (v *Vector) String() string {
 	return fmt.Sprintf("cap=%d %v", len(v.data), v.data[:v.size])
 }
@@ -117,8 +106,8 @@ type StatsVector struct {
 }
 
 // NewStatsVector creates a new empty vector with the given capacity
-func NewStatsVector(capacity int, min, max float64) StatsVector {
-	return StatsVector{NewVector(capacity, min, max), &RunningStat{}}
+func NewStatsVector(capacity int) StatsVector {
+	return StatsVector{NewVector(capacity), &RunningStat{}}
 }
 
 // Push method adds a new element and updates the stats

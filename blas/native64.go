@@ -279,6 +279,20 @@ func (m *native64) Sum() float64 {
 	return sum
 }
 
+// SumRows method returns a column vector with the sum of each row.
+func (m *native64) SumRows(in Matrix) Matrix {
+	a := in.(*native64)
+	m.Reshape(a.rows, 1, false)	
+	for row := 0; row < a.rows; row++ {
+		sum := float64(0)
+		for col := 0; col < a.cols; col++ {
+			sum += a.at(row, col)
+		}
+		m.set(row, 0, sum)
+	}
+	return m
+}
+
 // MaxCol method gets the column number with the maximim value for each row of the input matrix.
 func (v *native64) MaxCol(in Matrix) Matrix {
 	m := in.(*native64)
@@ -311,6 +325,25 @@ func (m *native64) Norm(in Matrix) Matrix {
 		for col := 0; col < m.cols; col++ {
 			m.set(row, col, scale * a.at(row, col))
 		}
+	}
+	return m
+}
+
+// Histogram method adds bins the values from the input column vector and adds to the histogram.
+func (m *native64) Histogram(in Matrix, bins int, min, max float64) Matrix {
+	a := in.(*native64)
+	m.Reshape(bins, 1, false)
+	scale := float64(bins) / float64(max-min)
+	xmin := float64(min)
+	for row := 0; row < a.rows; row++ {
+		bin := int(scale * (a.at(row, 0) - xmin))
+		if bin < 0 {
+			bin = 0
+		}
+		if bin >= bins {
+			bin = bins-1
+		}
+		m.data[bin*m.stride]++
 	}
 	return m
 }
