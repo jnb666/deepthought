@@ -11,6 +11,7 @@ type Sampler interface {
 	Next() bool
 	Sample(in, out blas.Matrix)
 	Release()
+	String() string
 }
 
 // UniformSampler creates a sampler which loops over minibatches in order with no randomisation.
@@ -47,6 +48,10 @@ func (s *uniformSampler) Sample(in, out blas.Matrix) {
 }
 
 func (s *uniformSampler) Release() {}
+
+func (s *uniformSampler) String() string {
+	return "uniform sampler"
+}
 
 // RandomSampler creates a sampler which shuffles the indices randomly on reach run.
 func RandomSampler(numSamples int) Sampler {
@@ -89,6 +94,10 @@ func (s *randomSampler) Sample(in, out blas.Matrix) {
 
 func (s *randomSampler) Release() {
 	s.index.Release()
+}
+
+func (s *randomSampler) String() string {
+	return "random sampler"
 }
 
 // Buffer type is a fixed size circular buffer.

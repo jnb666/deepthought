@@ -24,8 +24,7 @@ func (l Loader) Load(d *data.Dataset) (cfg *network.Config, net *network.Network
 		Threshold: 0.05,
 		LogEvery:  25,
 	}
-	fmt.Printf("XOR DATASET: [2,2,1] layers with quadratic cost and tanh activation\n%s\n", cfg)
-
+	fmt.Println("XOR DATASET: [2,2,1] layers with quadratic cost and tanh activation")
 	net = network.New(d.MaxSamples, d.OutputToClass)
 	net.AddLayer(2, 2, network.Linear)
 	net.AddLayer(2, 1, network.Tanh)

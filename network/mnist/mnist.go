@@ -27,8 +27,8 @@ func (l Loader) Load(d *data.Dataset) (cfg *network.Config, net *network.Network
 		Threshold: 0.0067,
 		LogEvery:  1,
 	}
-	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with quadratic cost and sigmoid activation\n%s\n\n",
-		d.NumInputs, hiddenNodes, d.NumOutputs, cfg)
+	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with quadratic cost and sigmoid activation\n",
+		d.NumInputs, hiddenNodes, d.NumOutputs)
 
 	net = network.New(cfg.BatchSize, d.OutputToClass)
 	net.AddLayer(d.NumInputs, hiddenNodes, network.Linear)
@@ -49,8 +49,8 @@ func (l Loader2) Load(d *data.Dataset) (cfg *network.Config, net *network.Networ
 		StopAfter: 8,
 		LogEvery:  5,
 	}
-	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with cross entropy cost and relu activation\n%s\n\n",
-		d.NumInputs, hiddenNodes, d.NumOutputs, cfg)
+	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with cross entropy cost and relu activation\n",
+		d.NumInputs, hiddenNodes, d.NumOutputs)
 
 	net = network.New(cfg.BatchSize, d.OutputToClass)
 	net.AddLayer(d.NumInputs, hiddenNodes, network.Linear)

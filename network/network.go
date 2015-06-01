@@ -299,13 +299,14 @@ func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum flo
 }
 
 // Train method trains the network on the given training set for one epoch.
-func (n *Network) Train(s *Stats, d *data.Dataset, smp Sampler, cfg *Config) {
+func (n *Network) Train(s *Stats, d *data.Dataset, cfg *Config) {
 	if n.input == nil {
 		n.input = blas.New(n.BatchSize, d.Train.Input.Cols())
 		n.output = blas.New(n.BatchSize, d.Train.Output.Cols())
 	}
 	s.Epoch++
 	s.StartEpoch = time.Now()
+	smp := cfg.Sampler
 	smp.Init(n.BatchSize)
 	batch := 0
 	for {

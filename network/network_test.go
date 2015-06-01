@@ -58,14 +58,14 @@ func TestTrain(t *testing.T) {
 		LearnRate: 10,
 		Threshold: 0.1,
 		LogEvery:  5,
+		Sampler:   UniformSampler(d.Train.NumSamples),
 	}
-	sampler := UniformSampler(d.Train.NumSamples)
 	stopFunc := StopCriteria(cfg)
 	s := NewStats()
 	s.StartRun()
 	var done, failed bool
 	for !done {
-		net.Train(s, d, sampler, cfg)
+		net.Train(s, d, cfg)
 		s.Update(net, d)
 		done, failed = stopFunc(s)
 		if s.Epoch%cfg.LogEvery == 0 || done {

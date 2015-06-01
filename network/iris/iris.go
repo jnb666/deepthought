@@ -24,8 +24,7 @@ func (l Loader) Load(d *data.Dataset) (cfg *network.Config, net *network.Network
 		Threshold: 0.1,
 		LogEvery:  25,
 	}
-	fmt.Printf("IRIS DATASET: single layer with quadratic cost\n%s\n", cfg)
-
+	fmt.Println("IRIS DATASET: single layer with quadratic cost")
 	net = network.New(d.MaxSamples, d.OutputToClass)
 	net.AddLayer(d.NumInputs, d.NumOutputs, network.Linear)
 	net.AddQuadraticOutput(d.NumOutputs, network.Sigmoid)

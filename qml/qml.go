@@ -4,6 +4,7 @@ package qml
 import (
 	"bytes"
 	"gopkg.in/qml.v1"
+	"strings"
 	"sync"
 	"text/template"
 )
@@ -23,10 +24,14 @@ type Ctrl struct {
 	current  int
 }
 
-func NewCtrl(dataSets []string, selected int) *Ctrl {
+func NewCtrl(dataSets []string, selected string) *Ctrl {
 	c := new(Ctrl)
 	c.setNames = dataSets
-	c.current = selected
+	for ix, set := range dataSets {
+		if strings.ToLower(set) == strings.ToLower(selected) {
+			c.current = ix
+		}
+	}
 	c.ev = make(chan Event, 10)
 	c.WG.Add(1)
 	return c

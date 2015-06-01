@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"strings"
 
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
@@ -18,16 +17,15 @@ import (
 func main() {
 	network.Init(blas.OpenCL32)
 	dataSets := network.DataSets()
-	ix := 0
+	model := dataSets[0]
+	flag.StringVar(&model, "model", model, "data model to run")
 	flag.Parse()
-	if flag.NArg() >= 1 {
-		for i, name := range dataSets {
-			if strings.ToLower(flag.Arg(0)) == strings.ToLower(name) {
-				ix = i
-			}
-		}
+
+	cfg, net, data, err := network.Load(model)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
-	cfg, net, data, sampler := loadNetwork(dataSets[ix])
 	s := network.NewStats()
 
 	p1 := qml.NewPlot("cost", "average cost vs epoch",
@@ -50,30 +48,14 @@ func main() {
 		qml.NewPoints(s.RunTime, s.ClsError, "classification error"),
 	)
 
-	ctrl := qml.NewCtrl(dataSets, ix)
-	go train(cfg, net, data, sampler, s, ctrl)
+	ctrl := qml.NewCtrl(dataSets, model)
+	go train(cfg, net, data, s, ctrl)
 	qml.MainLoop(ctrl, p1, p2, p3, p4)
 	ctrl.WG.Wait()
 }
 
-// initialise a new run
-func loadNetwork(name string) (cfg *network.Config, net *network.Network, data *data.Dataset, smp network.Sampler) {
-	var err error
-	fmt.Println(">>load network", name)
-	if cfg, net, data, err = network.Load(name); err != nil {
-		panic(err)
-	}
-	smp = network.UniformSampler(data.Train.NumSamples)
-	if cfg.BatchSize > 0 && data.Train.NumSamples > cfg.BatchSize {
-		smp = network.RandomSampler(data.Train.NumSamples)
-		fmt.Println("select random samper with batch size =", cfg.BatchSize)
-	}
-	return
-}
-
 // train the network
-func train(cfg *network.Config, net *network.Network, data *data.Dataset, smp network.Sampler,
-	s *network.Stats, ctrl *qml.Ctrl) {
+func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *network.Stats, ctrl *qml.Ctrl) {
 	var running, started bool
 	var stopCond func(*network.Stats) (bool, bool)
 
@@ -105,7 +87,7 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, smp ne
 			if !started {
 				startRun()
 			}
-			net.Train(s, data, smp, cfg)
+			net.Train(s, data, cfg)
 			s.Update(net, data)
 			done, failed := stopCond(s)
 			if s.Epoch%cfg.LogEvery == 0 || done {
@@ -120,7 +102,7 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, smp ne
 			fmt.Printf("%s\n\n", s.History())
 		case "select": // choose a new data set
 			s.Reset()
-			cfg, net, data, smp = loadNetwork(ev.Arg)
+			cfg, net, data, _ = network.Load(ev.Arg)
 			ctrl.Refresh()
 		case "quit": // exit the program
 			net.Release()

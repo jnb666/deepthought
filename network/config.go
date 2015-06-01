@@ -20,6 +20,7 @@ type Config struct {
 	RandomSeed  int64   // random number seed - set randomly if zero
 	BatchMode   bool    // turns off plotting
 	Debug       bool    // enable debug printing
+	Sampler     Sampler // sampler to use
 }
 
 // Register map of all loaders which are available
@@ -50,9 +51,15 @@ func Load(name string) (cfg *Config, net *Network, d *data.Dataset, err error) {
 	}
 	cfg, net = loader.Load(d)
 	cfg.RandomSeed = SeedRandom(cfg.RandomSeed)
+	if cfg.BatchSize > 0 && d.Train.NumSamples > cfg.BatchSize {
+		cfg.Sampler = RandomSampler(d.Train.NumSamples)
+	} else {
+		cfg.Sampler = UniformSampler(d.Train.NumSamples)
+	}
 	//if cfg.Debug {
 	//	net.CheckGradient(cfg.LogEvery, 1e-6, 0, 1)
 	//}
+	fmt.Println(cfg, "\n")
 	return
 }
 
