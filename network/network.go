@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/data"
-	"github.com/jnb666/deepthought/mplot"
+	"github.com/jnb666/deepthought/vec"
 	"math"
 	"math/rand"
 	"strings"
@@ -107,13 +107,18 @@ type Network struct {
 	checkSamples int
 	checkMax     float64
 	checkScale   float64
+	input        blas.Matrix
+	output       blas.Matrix
+	errorHist    blas.Matrix
 }
 
 // New function initialises a new network, samples is the maximum number of samples, i.e. minibatch size.
-func New(samples int) *Network {
+func New(samples int, out2class blas.UnaryFunction) *Network {
 	return &Network{
 		BatchSize: samples,
 		classes:   blas.New(samples, 1),
+		errorHist: blas.New(histBins, 1),
+		out2class: out2class,
 	}
 }
 
@@ -129,6 +134,10 @@ func (n *Network) Release() {
 		layer.Release()
 	}
 	n.classes.Release()
+	if n.input != nil {
+		n.input.Release()
+		n.output.Release()
+	}
 }
 
 // String method returns a printable representation of the network.
@@ -152,6 +161,7 @@ func (n *Network) SetRandomWeights() {
 			data[i] = rand.NormFloat64() / math.Sqrt(float64(nin))
 		}
 		w.Load(blas.ColMajor, data...)
+		layer.Gradient().Set(0)
 	}
 }
 
@@ -165,22 +175,20 @@ func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 // samples parameter is the maximum number of samples to check.
-func (n *Network) GetError(samples int, d *data.Data, errorHist *mplot.Histogram) (totalErr, classErr float64) {
-	totalError := new(mplot.RunningStat)
-	classError := new(mplot.RunningStat)
+func (n *Network) GetError(samples int, d *data.Data, hist *vec.Vector, hmax float64) (totalErr, classErr float64) {
+	totalError := new(vec.RunningStat)
+	classError := new(vec.RunningStat)
 	cols := d.Output.Cols()
 	rows := n.BatchSize
 	if rows > samples {
 		rows = samples
 	}
-	// use double buffering to update
-	buf := 1 - errorHist.Buffer
-	errorHist.Col(buf, buf+1).Set(0)
+	n.errorHist.Set(0)
 	for ix := 0; ix < samples; ix += rows {
 		// get cost per sample
 		output := n.FeedForward(d.Input.Row(ix, ix+rows))
 		cost := n.Nodes[n.Layers-1].Cost(d.Output.Row(ix, ix+rows))
-		errorHist.Update(cost, buf)
+		n.errorHist.Histogram(cost, histBins, histMin, hmax)
 		// average error over dataset
 		totalError.Push(cost.Sum() / float64(rows*cols))
 		// get classification error
@@ -191,10 +199,10 @@ func (n *Network) GetError(samples int, d *data.Data, errorHist *mplot.Histogram
 			fmt.Printf("\rtest batch: %d/%d        ", ix+rows, samples)
 		}
 	}
-	errorHist.Buffer = buf
 	if n.Verbose {
 		fmt.Print("\r")
 	}
+	hist.Set(0, hmax/histBins, n.errorHist.Data(blas.ColMajor))
 	return totalError.Mean, classError.Mean
 }
 
@@ -265,19 +273,19 @@ func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 }
 
 // Train step method performs one training step. eta is the learning rate, lambda is the weight decay.
-func (n *Network) TrainStep(batch, samples int, in, out blas.Matrix, eta, lambda, momentum float64, s *Stats) {
-	n.FeedForward(in)
+func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum float64) {
+	n.FeedForward(n.input)
 	// back propagate error and scale gradient
-	delta := n.Nodes[n.Layers-1].BackProp(out, momentum)
-	batchSize := float64(in.Rows())
+	delta := n.Nodes[n.Layers-1].BackProp(n.output, momentum)
+	batchSize := float64(n.input.Rows())
 	for i := n.Layers - 2; i >= 0; i-- {
 		layer := n.Nodes[i]
 		delta = layer.BackProp(delta, momentum)
 		layer.Gradient().Scale(-eta / batchSize)
 	}
 	// optionally check gradients
-	if batch == 0 && n.checkEvery > 0 && s.Epoch%n.checkEvery == 0 {
-		n.doCheck(in, out)
+	if batch == 0 && n.checkEvery > 0 && epoch%n.checkEvery == 0 {
+		n.doCheck(n.input, n.output)
 	}
 	// update weights
 	weightScale := 1 - eta*lambda/float64(samples)
@@ -290,41 +298,28 @@ func (n *Network) TrainStep(batch, samples int, in, out blas.Matrix, eta, lambda
 	}
 }
 
-// Train method trains the network on the given training set and updates the stats.
-// stop callback function returns true if we should terminate the run.
-func (n *Network) Train(d *data.Dataset, smp Sampler, eta, lambda, momentum float64, stats *Stats, stop func(*Stats) bool) int {
-	n.out2class = d.OutputToClass
-	in := blas.New(n.BatchSize, d.Train.Input.Cols())
-	out := blas.New(n.BatchSize, d.Train.Output.Cols())
-	stats.StartRun()
+// Train method trains the network on the given training set for one epoch.
+func (n *Network) Train(s *Stats, d *data.Dataset, smp Sampler, cfg *Config) {
+	if n.input == nil {
+		n.input = blas.New(n.BatchSize, d.Train.Input.Cols())
+		n.output = blas.New(n.BatchSize, d.Train.Output.Cols())
+	}
+	s.Epoch++
+	s.StartEpoch = time.Now()
+	smp.Init(n.BatchSize)
+	batch := 0
 	for {
-		stats.StartEpoch = time.Now()
-		// train over each batch of data
-		smp.Init(n.BatchSize)
-		batch := 0
-		ok := true
-		for ok {
-			smp.Sample(d.Train.Input, in)
-			smp.Sample(d.Train.Output, out)
-			n.TrainStep(batch, d.Train.NumSamples, in, out, eta, lambda, momentum, stats)
-			batch++
-			if n.Verbose {
-				fmt.Printf("\rtrain batch: %d/%d        ", batch, d.Train.NumSamples/n.BatchSize)
-			}
-			ok = smp.Next()
+		smp.Sample(d.Train.Input, n.input)
+		smp.Sample(d.Train.Output, n.output)
+		n.TrainStep(s.Epoch, batch, d.Train.NumSamples, cfg.LearnRate, cfg.WeightDecay, cfg.Momentum)
+		batch++
+		if n.Verbose {
+			fmt.Printf("\rtrain batch: %d/%d        ", batch, d.Train.NumSamples/n.BatchSize)
 		}
-		// update stats and check stopping condition
-		stats.Update(n, d)
-		if stop(stats) {
+		if !smp.Next() {
 			break
 		}
-		stats.Epoch++
-
 	}
-	stats.EndRun()
-	in.Release()
-	out.Release()
-	return stats.Epoch
 }
 
 // SeedRandom function sets the random seed, or seeds using time if input is zero. Returns the seed which was used.

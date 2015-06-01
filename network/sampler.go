@@ -96,35 +96,3 @@ type Buffer struct {
 	data []float64
 	size int
 }
-
-// NewBuffer function creates a new buffer with allocated maximum size.
-func NewBuffer(size int) *Buffer {
-	return &Buffer{data: make([]float64, size)}
-}
-
-// Push method appends an item to the buffer.
-func (b *Buffer) Push(v float64) {
-	if b.size < len(b.data) {
-		b.data[b.size] = v
-		b.size++
-	} else {
-		copy(b.data, b.data[1:])
-		b.data[b.size-1] = v
-	}
-}
-
-// Len method returns the number of items in the buffer.
-func (b *Buffer) Len() int {
-	return b.size
-}
-
-// Max method returns the maximum value.
-func (b *Buffer) Max() float64 {
-	max := -1.0e99
-	for _, v := range b.data {
-		if v > max {
-			max = v
-		}
-	}
-	return max
-}

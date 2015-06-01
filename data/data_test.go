@@ -34,7 +34,8 @@ func TestXor(t *testing.T) {
 func TestMNIST(t *testing.T) {
 	s := load(t, "mnist", 0)
 	entry := 2
-	in := blas.New(28, 28).Copy(s.Train.Input.Row(entry, entry+1).Reshape(28, 28, true))
+	img := s.Train.Input.Row(entry, entry+1).Reshape(28, 28, true)
+	in := blas.New(28, 28).Copy(img, nil)
 	in.SetFormat("%c")
 	t.Logf("input:\n%s\n", in)
 	out := s.Train.Output.Row(entry, entry+1)

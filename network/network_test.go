@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-const maxEpoch = 200
-
 func init() {
 	Init(blas.Native32)
 	//Init(blas.OpenCL32)
@@ -18,7 +16,7 @@ func createNetwork(samples int) (net *Network, s *data.Dataset, err error) {
 	if s, err = data.Load("iris", samples); err != nil {
 		return
 	}
-	net = New(s.MaxSamples)
+	net = New(s.MaxSamples, s.OutputToClass)
 	net.AddLayer(s.NumInputs, s.NumOutputs, Linear)
 	net.AddQuadraticOutput(s.NumOutputs, Sigmoid)
 	net.SetRandomWeights()
@@ -55,18 +53,27 @@ func TestTrain(t *testing.T) {
 	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
 	t.Log(net)
-	stats := NewStats(maxEpoch, 1, 1.0)
-	stopFunc := func(s *Stats) bool {
-		done := s.Epoch >= maxEpoch || s.Valid.Error.Last() < 0.1
-		if s.Epoch%10 == 0 || done {
-			t.Log(s)
-		}
-		return done
+	cfg := &Config{
+		MaxEpoch:  200,
+		LearnRate: 10,
+		Threshold: 0.1,
+		LogEvery:  5,
 	}
 	sampler := UniformSampler(d.Train.NumSamples)
-	epochs := net.Train(d, sampler, 10, 0, 0, stats, stopFunc)
-	t.Logf("completed after %d epochs\n", epochs)
-	if epochs == maxEpoch {
+	stopFunc := StopCriteria(cfg)
+	s := NewStats()
+	s.StartRun()
+	var done, failed bool
+	for !done {
+		net.Train(s, d, sampler, cfg)
+		s.Update(net, d)
+		done, failed = stopFunc(s)
+		if s.Epoch%cfg.LogEvery == 0 || done {
+			t.Log(s)
+		}
+	}
+	t.Log(s.EndRun(failed))
+	if failed {
 		t.Error("training failed to hit threshold!")
 	}
 	t.Log(net)
