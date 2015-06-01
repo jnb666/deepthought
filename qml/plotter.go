@@ -9,7 +9,7 @@ const (
 	legendWidth      = 0.03
 	legendPadding    = 0.005
 	defaultLineWidth = 2
-	defaultPointSize = 0.008
+	defaultPointSize = 5
 )
 
 // Plotter interface type is a plottable data set.
@@ -161,14 +161,20 @@ func (d *Points) Plot(gl *GL.GL, p *Plot) {
 	if len(d.pts) < 1 {
 		return
 	}
-	gl.PushAttrib(GL.CURRENT_BIT | GL.LINE_BIT)
-	gl.LineWidth(2)
+	gl.PushAttrib(GL.CURRENT_BIT)
 	setColor(gl, d.Color)
+	gl.PointSize(d.PointSize)
+	gl.PushMatrix()
+	p.Rescale(gl)
+	gl.Enable(GL.BLEND)
+	gl.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA)
+	gl.Enable(GL.POINT_SMOOTH)
+	gl.Begin(GL.POINTS)
 	for _, pt := range d.pts {
-		x, y := p.Trans(pt.X, pt.Y)
-		drawLine(gl, x-d.PointSize, y-d.PointSize, x+d.PointSize, y+d.PointSize)
-		drawLine(gl, x-d.PointSize, y+d.PointSize, x+d.PointSize, y-d.PointSize)
+		gl.Vertex2f(pt.X, pt.Y)
 	}
+	gl.End()
+	gl.PopMatrix()
 	gl.PopAttrib()
 }
 
