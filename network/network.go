@@ -306,8 +306,7 @@ func (n *Network) Train(s *Stats, d *data.Dataset, cfg *Config) {
 	}
 	s.Epoch++
 	s.StartEpoch = time.Now()
-	smp := cfg.Sampler
-	smp.Init(n.BatchSize)
+	smp := Samplers[cfg.Sampler].Init(d.Train.NumSamples, n.BatchSize)
 	batch := 0
 	for {
 		smp.Sample(d.Train.Input, n.input)
@@ -321,6 +320,7 @@ func (n *Network) Train(s *Stats, d *data.Dataset, cfg *Config) {
 			break
 		}
 	}
+	smp.Release()
 }
 
 // SeedRandom function sets the random seed, or seeds using time if input is zero. Returns the seed which was used.
@@ -328,6 +328,7 @@ func SeedRandom(seed int64) int64 {
 	if seed == 0 {
 		seed = time.Now().UTC().UnixNano()
 	}
+	fmt.Println("set random seed to", seed)
 	rand.Seed(seed)
 	return seed
 }

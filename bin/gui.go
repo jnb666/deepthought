@@ -15,10 +15,12 @@ import (
 )
 
 func main() {
+	var seed int64
 	network.Init(blas.OpenCL32)
 	dataSets := network.DataSets()
 	model := dataSets[0]
 	flag.StringVar(&model, "model", model, "data model to run")
+	flag.Int64Var(&seed, "seed", 0, "random number seed")
 	flag.Parse()
 
 	cfg, net, data, err := network.Load(model)
@@ -26,6 +28,8 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	network.SeedRandom(seed)
+	cfg.Print()
 	s := network.NewStats()
 
 	p1 := qml.NewPlot("cost", "average cost vs epoch",
@@ -48,7 +52,7 @@ func main() {
 		qml.NewPoints(s.RunTime, s.ClsError, "classification error"),
 	)
 
-	ctrl := qml.NewCtrl(dataSets, model)
+	ctrl := qml.NewCtrl(cfg, dataSets, model)
 	go train(cfg, net, data, s, ctrl)
 	qml.MainLoop(ctrl, p1, p2, p3, p4)
 	ctrl.WG.Wait()
@@ -103,7 +107,8 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 		case "select": // choose a new data set
 			s.Reset()
 			cfg, net, data, _ = network.Load(ev.Arg)
-			ctrl.Refresh()
+			cfg.Print()
+			ctrl.Refresh(cfg)
 		case "quit": // exit the program
 			net.Release()
 			blas.Release()

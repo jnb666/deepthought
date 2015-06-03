@@ -3,11 +3,17 @@ package qml
 
 import (
 	"bytes"
+	"github.com/jnb666/deepthought/config"
+	"github.com/jnb666/deepthought/network"
+	"go/build"
 	"gopkg.in/qml.v1"
+	"reflect"
 	"strings"
 	"sync"
 	"text/template"
 )
+
+const importString = "github.com/jnb666/deepthought/qml"
 
 type Event struct {
 	Typ string
@@ -16,6 +22,7 @@ type Event struct {
 
 // Ctrl type is used for communication with the gui
 type Ctrl struct {
+	conf     *Config
 	WG       sync.WaitGroup
 	ev       chan Event
 	run      qml.Object
@@ -24,8 +31,9 @@ type Ctrl struct {
 	current  int
 }
 
-func NewCtrl(dataSets []string, selected string) *Ctrl {
+func NewCtrl(cfg *network.Config, dataSets []string, selected string) *Ctrl {
 	c := new(Ctrl)
+	c.conf = &Config{cfg: cfg}
 	c.setNames = dataSets
 	for ix, set := range dataSets {
 		if strings.ToLower(set) == strings.ToLower(selected) {
@@ -35,6 +43,11 @@ func NewCtrl(dataSets []string, selected string) *Ctrl {
 	c.ev = make(chan Event, 10)
 	c.WG.Add(1)
 	return c
+}
+
+func (c *Ctrl) init(root qml.Object) {
+	c.run = root.ObjectByName("runButton")
+	c.plot = root.ObjectByName("plotControl")
 }
 
 // Get next event from channel, if running is set then auto step
@@ -66,16 +79,71 @@ func (c *Ctrl) Select(index int) {
 
 // Callback when run is completed
 func (c *Ctrl) Done() {
-	if c.run != nil {
-		qml.RunMain(func() { c.run.Set("checked", false) })
-	}
+	qml.RunMain(func() { c.run.Set("checked", false) })
 }
 
 // Callback to refresh the plot
-func (c *Ctrl) Refresh() {
-	if c.plot != nil {
-		qml.RunMain(func() { c.plot.Call("update") })
+func (c *Ctrl) Refresh(cfg *network.Config) {
+	c.conf.cfg = cfg
+	qml.RunMain(func() {
+		c.plot.Call("update")
+		c.conf.Update()
+	})
+}
+
+// Config type manages updating the config settings
+type Config struct {
+	cfg   *network.Config
+	opts  []qml.Object
+	name  []string
+	ready bool
+}
+
+func (c *Config) init(root qml.Object) {
+	s := reflect.ValueOf(c.cfg).Elem()
+	c.opts = make([]qml.Object, s.NumField())
+	c.name = make([]string, s.NumField())
+	for i := range c.opts {
+		name := s.Type().Field(i).Name
+		opt := root.ObjectByName(name)
+		if name == "Sampler" {
+			opt.On("activated", func() {
+				config.Set(c.cfg, name, network.SamplerNames[opt.Int("currentIndex")])
+			})
+
+		} else {
+			opt.On("editingFinished", func() {
+				config.Set(c.cfg, name, opt.String("text"))
+			})
+		}
+		c.opts[i] = opt
+		c.name[i] = name
 	}
+	c.ready = true
+}
+
+// Update display of config settings
+func (c *Config) Update() {
+	if !c.ready {
+		return
+	}
+	for i, opt := range c.opts {
+		value := config.Get(c.cfg, c.name[i])
+		if c.name[i] == "Sampler" {
+			for i, name := range network.SamplerNames {
+				if name == value {
+					opt.Set("currentIndex", i)
+				}
+			}
+		} else {
+			opt.Set("text", value)
+		}
+	}
+}
+
+// Print current config settings to stdout
+func (c *Config) Print() {
+	config.Print(c.cfg)
 }
 
 // MainLoop function is called to draw the scene, it does not return.
@@ -99,9 +167,14 @@ func MainLoop(ctrl *Ctrl, plts ...*Plot) {
 		}
 		context := engine.Context()
 		context.SetVar("ctrl", ctrl)
+		context.SetVar("cfg", ctrl.conf)
 		win := component.CreateWindow(nil)
-		ctrl.run = win.Root().ObjectByName("runButton")
-		ctrl.plot = win.Root().ObjectByName("plotControl")
+		root := win.Root()
+		tabs := root.ObjectByName("tabs")
+		tabs.Set("currentIndex", 1)
+		ctrl.conf.init(tabs.Call("getTab", 1).(qml.Object))
+		tabs.Set("currentIndex", 0)
+		ctrl.init(tabs.Call("getTab", 0).(qml.Object))
 		win.Show()
 		win.Wait()
 		return nil
@@ -125,7 +198,11 @@ type plotSel struct {
 
 // construct the scene description
 func getScene(plts []*Plot, names []string, ix int) string {
-	tmpl, err := template.New("scene").Parse(sceneTmpl)
+	pkg, err := build.Import(importString, "", build.FindOnly)
+	if err != nil {
+		panic("cannot find package " + importString)
+	}
+	tmpl, err := template.ParseFiles(pkg.Dir + "/main.qml")
 	if err != nil {
 		panic(err)
 	}
@@ -142,60 +219,3 @@ func getScene(plts []*Plot, names []string, ix int) string {
 	}
 	return buf.String()
 }
-
-var sceneTmpl = `
-import QtQuick 2.2
-import QtQuick.Controls 1.1
-import QtQuick.Layouts 1.1
-import QtQuick.Dialogs 1.1
-import GoExtensions 1.0
-
-ApplicationWindow {
-	id: root; title: "deepthought"; color: "lightgray"; x: 50; y: 50
-	onClosing: ctrl.send("quit", "")
-
-	ColumnLayout {	
-		RowLayout {
-			spacing: 20
-			Button { text: "restart"; onClicked: ctrl.send("start", "") }
-			Button { text: "step"; onClicked: ctrl.send("step", "") }
-			Button {
-				objectName: "runButton"; text: "run"; checkable: true
-				onClicked: ctrl.send("run", checked ? "start" : "stop");
-			}
-			Button { text: "stats"; onClicked: ctrl.send("stats", "") }
-			Label { text: "data set:" }
-			ComboBox {
-				objectName: "modelList"
-				width: 120
-				model: ListModel {
-					{{ range .Datasets }}
-					ListElement { text: "{{ . }}" }
-					{{ end }}
-				}
-				currentIndex: {{ .Index }}
-				onActivated: ctrl.select(index)
-			}
-		}
-		Plots{
-			id: plot; objectName: "plotControl"
-			width: 800; height: 800
-			background: "black"; color: "white"
-			grid: true; gridColor: "#404040"
-			Timer {
-				interval: 100; running: true; repeat: true
-				onTriggered: plot.update()
-			}
-		}
-		RowLayout {
-			ExclusiveGroup { id: plotGroup }
-			{{ range .Plots }}
-			RadioButton { 
-				text: "{{ .Name }}"; exclusiveGroup: plotGroup; checked: {{ .Selected }}
-				onClicked: plot.select({{ .Index }})
-			}
-			{{ end }}
-		}
-	}
-}
-`

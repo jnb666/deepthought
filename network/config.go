@@ -2,13 +2,16 @@ package network
 
 import (
 	"fmt"
+	"github.com/jnb666/deepthought/config"
 	"github.com/jnb666/deepthought/data"
-	"reflect"
 	"sort"
-	"strings"
 )
 
+// Register map of all loaders which are available
+var Register = map[string]Loader{}
+
 type Config struct {
+	MaxRuns     int     // number of runs: required
 	MaxEpoch    int     // maximum epoch: required
 	LearnRate   float64 // learning rate eta: required
 	WeightDecay float64 // weight decay epsilon
@@ -17,15 +20,14 @@ type Config struct {
 	BatchSize   int     // minibatch size
 	StopAfter   int     // stop after n epochs with no improvement
 	LogEvery    int     // log stats every n epochs
-	RandomSeed  int64   // random number seed - set randomly if zero
-	BatchMode   bool    // turns off plotting
-	Debug       bool    // enable debug printing
-	Sampler     Sampler // sampler to use
+	Sampler     string  // sampler to use
 }
 
-// Register map of all loaders which are available
-var Register = map[string]Loader{}
+func (c *Config) Print() {
+	config.Print(c)
+}
 
+// Data sets function lists all the registered models.
 func DataSets() (s []string) {
 	for name := range Register {
 		s = append(s, name)
@@ -34,9 +36,11 @@ func DataSets() (s []string) {
 	return s
 }
 
+// Loader type is used to load new data sets and associated config.
 type Loader interface {
-	Load(d *data.Dataset) (cfg *Config, net *Network)
-	Dataset() string
+	DefaultConfig() *Config
+	DatasetName() string
+	CreateNetwork(cfg *Config, d *data.Dataset) *Network
 }
 
 // Load function loads a data set, creates the network and returns the default config
@@ -46,31 +50,13 @@ func Load(name string) (cfg *Config, net *Network, d *data.Dataset, err error) {
 		err = fmt.Errorf("Load: unknown dataset name %s\n", name)
 		return
 	}
-	if d, err = data.Load(loader.Dataset(), 0); err != nil {
+	cfg = loader.DefaultConfig()
+	cfg.MaxRuns = 1
+	if d, err = data.Load(loader.DatasetName(), 0); err != nil {
 		return
 	}
-	cfg, net = loader.Load(d)
-	cfg.RandomSeed = SeedRandom(cfg.RandomSeed)
-	if cfg.BatchSize > 0 && d.Train.NumSamples > cfg.BatchSize {
-		cfg.Sampler = RandomSampler(d.Train.NumSamples)
-	} else {
-		cfg.Sampler = UniformSampler(d.Train.NumSamples)
-	}
-	//if cfg.Debug {
-	//	net.CheckGradient(cfg.LogEvery, 1e-6, 0, 1)
-	//}
-	fmt.Println(cfg, "\n")
+	net = loader.CreateNetwork(cfg, d)
 	return
-}
-
-// String method formats the config for printing.
-func (c *Config) String() string {
-	s := reflect.ValueOf(c).Elem()
-	str := make([]string, s.NumField())
-	for i := 0; i < s.NumField(); i++ {
-		str[i] = fmt.Sprintf("%12s : %v", s.Type().Field(i).Name, s.Field(i).Interface())
-	}
-	return strings.Join(str, "\n")
 }
 
 // Stop criteria function returns a function to check if training is complete.
@@ -96,6 +82,12 @@ func StopCriteria(cfg *Config) func(*Stats) (done, failed bool) {
 		}
 		return
 	}
+}
+
+// Buffer type is a fixed size circular buffer.
+type Buffer struct {
+	data []float64
+	size int
 }
 
 // NewBuffer function creates a new buffer with allocated maximum size.

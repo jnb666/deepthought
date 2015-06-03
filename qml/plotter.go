@@ -260,9 +260,11 @@ func (h *Histogram) Refresh() {
 		x, y := h.data.XY(i)
 		h.bins[i] = bin{min: float32(x), max: float32(x + w), val: float32(y)}
 	}
-	x0, y0, x1, y1 := h.data.DataRange()
-	h.min = NewPoint(x0, y0)
-	h.max = NewPoint(x1, y1)
+	if h.data.Len() > 0 {
+		x0, y0, x1, y1 := h.data.DataRange()
+		h.min = NewPoint(x0, y0)
+		h.max = NewPoint(x1, y1)
+	}
 }
 
 type bin struct {

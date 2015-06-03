@@ -5,33 +5,36 @@ import (
 	"math/rand"
 )
 
+var Samplers = map[string]Sampler{
+	"uniform": &UniformSampler{},
+	"random":  &RandomSampler{},
+}
+
+var SamplerNames = []string{"uniform", "random"}
+
 // Sampler interface is used to split the data set into batches.
 type Sampler interface {
-	Init(batchSize int) Sampler
+	Init(samples, batchSize int) Sampler
 	Next() bool
 	Sample(in, out blas.Matrix)
 	Release()
-	String() string
 }
 
-// UniformSampler creates a sampler which loops over minibatches in order with no randomisation.
-func UniformSampler(numSamples int) Sampler {
-	return &uniformSampler{samples: numSamples}
-}
-
-type uniformSampler struct {
+// UniformSampler loops over minibatches in order with no randomisation.
+type UniformSampler struct {
 	samples int
 	batch   int
 	start   int
 }
 
-func (s *uniformSampler) Init(batchSize int) Sampler {
+func (s *UniformSampler) Init(samples, batchSize int) Sampler {
+	s.samples = samples
 	s.batch = batchSize
 	s.start = 0
 	return s
 }
 
-func (s *uniformSampler) Next() bool {
+func (s *UniformSampler) Next() bool {
 	if s.start+s.batch < s.samples {
 		s.start += s.batch
 		return true
@@ -39,7 +42,7 @@ func (s *uniformSampler) Next() bool {
 	return false
 }
 
-func (s *uniformSampler) Sample(in, out blas.Matrix) {
+func (s *UniformSampler) Sample(in, out blas.Matrix) {
 	end := s.start + s.batch
 	if in.Rows() < end {
 		end = in.Rows()
@@ -47,36 +50,28 @@ func (s *uniformSampler) Sample(in, out blas.Matrix) {
 	out.Copy(in.Row(s.start, end), nil)
 }
 
-func (s *uniformSampler) Release() {}
+func (s *UniformSampler) Release() {}
 
-func (s *uniformSampler) String() string {
-	return "uniform sampler"
-}
-
-// RandomSampler creates a sampler which shuffles the indices randomly on reach run.
-func RandomSampler(numSamples int) Sampler {
-	return &randomSampler{index: blas.New(numSamples, 1)}
-}
-
-type randomSampler struct {
+// RandomSampler shuffles the indices randomly on reach run.
+type RandomSampler struct {
 	index blas.Matrix
 	batch int
 	start int
 }
 
-func (s *randomSampler) Init(batchSize int) Sampler {
+func (s *RandomSampler) Init(samples, batchSize int) Sampler {
 	s.batch = batchSize
 	s.start = 0
-	rows := s.index.Rows()
-	data := make([]float64, rows)
-	for i, ix := range rand.Perm(rows) {
+	s.index = blas.New(samples, 1)
+	data := make([]float64, samples)
+	for i, ix := range rand.Perm(samples) {
 		data[i] = float64(ix)
 	}
 	s.index.Load(blas.RowMajor, data...)
 	return s
 }
 
-func (s *randomSampler) Next() bool {
+func (s *RandomSampler) Next() bool {
 	if s.start+s.batch < s.index.Rows() {
 		s.start += s.batch
 		return true
@@ -84,7 +79,7 @@ func (s *randomSampler) Next() bool {
 	return false
 }
 
-func (s *randomSampler) Sample(in, out blas.Matrix) {
+func (s *RandomSampler) Sample(in, out blas.Matrix) {
 	end := s.start + s.batch
 	if s.index.Rows() < end {
 		end = s.index.Rows()
@@ -92,16 +87,6 @@ func (s *randomSampler) Sample(in, out blas.Matrix) {
 	out.Copy(in, s.index.Row(s.start, end))
 }
 
-func (s *randomSampler) Release() {
+func (s *RandomSampler) Release() {
 	s.index.Release()
-}
-
-func (s *randomSampler) String() string {
-	return "random sampler"
-}
-
-// Buffer type is a fixed size circular buffer.
-type Buffer struct {
-	data []float64
-	size int
 }

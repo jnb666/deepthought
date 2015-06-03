@@ -13,13 +13,14 @@ import (
 )
 
 func main() {
+	var runs int
+	var seed int64
 	network.Init(blas.OpenCL32)
 	dataSets := network.DataSets()
-
-	runs := 1
 	model := dataSets[0]
-	flag.IntVar(&runs, "runs", runs, "number of runs")
 	flag.StringVar(&model, "model", model, "data model to run")
+	flag.IntVar(&runs, "runs", 1, "number of runs")
+	flag.Int64Var(&seed, "seed", 0, "random number seed")
 	flag.Parse()
 
 	cfg, net, data, err := network.Load(model)
@@ -27,6 +28,8 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	network.SeedRandom(seed)
+	cfg.Print()
 	s := network.NewStats()
 
 	for i := 0; i < runs; i++ {
@@ -45,4 +48,6 @@ func main() {
 		fmt.Printf("%s\n\n", s.EndRun(failed))
 	}
 	fmt.Println(s.History())
+	net.Release()
+	blas.Release()
 }
