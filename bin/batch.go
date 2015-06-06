@@ -41,7 +41,7 @@ func main() {
 			net.Train(s, data, cfg)
 			s.Update(net, data)
 			done, failed = stop(s)
-			if s.Epoch%cfg.LogEvery == 0 || done {
+			if cfg.LogEvery > 0 && (s.Epoch%cfg.LogEvery == 0 || done) {
 				fmt.Println(s)
 			}
 		}

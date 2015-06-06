@@ -51,7 +51,7 @@ func Load(name string) (cfg *Config, net *Network, d *data.Dataset, err error) {
 		return
 	}
 	cfg = loader.DefaultConfig()
-	cfg.MaxRuns = 1
+	config.Load(cfg, name)
 	if d, err = data.Load(loader.DatasetName(), 0); err != nil {
 		return
 	}

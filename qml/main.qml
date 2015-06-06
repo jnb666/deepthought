@@ -37,13 +37,15 @@ ApplicationWindow {
 						objectName: "modelList"
 						width: 120
 						model: ListModel {
+							id: dataSets
 							{{ range .Datasets }}
 							ListElement { text: "{{ . }}" }
 							{{ end }}
 						}
 						currentIndex: {{ .Index }}
-						onActivated: ctrl.select(index)
+						onActivated: ctrl.select(dataSets.get(index).text)
 					}
+					Label { objectName: "runLabel" }
 				}
 				Plots{
 					id: plot; objectName: "plotControl"
@@ -70,7 +72,6 @@ ApplicationWindow {
 		Component {
 			id: "tab2"
 			GridLayout {
-				onVisibleChanged: cfg.update()
 				columns: 3
 				columnSpacing: 5; rowSpacing: 5
 				Label { 
@@ -80,9 +81,10 @@ ApplicationWindow {
 				TextField {
 					id: runs; objectName: "MaxRuns"
 					validator: IntValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
 				Button { 
-					text: "save" 
+					text: "save"; onClicked: cfg.save(cfg.model) 
 				}
 				Label { 
 					text: "max epoch"
@@ -91,9 +93,10 @@ ApplicationWindow {
 				TextField {
 					id: epochs; objectName: "MaxEpoch"
 					validator: IntValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
 				Button { 
-					text: "load" 
+					text: "load"; onClicked: cfg.load(cfg.model)  
 				}
 				Label { 
 					text: "learning rate"
@@ -102,10 +105,11 @@ ApplicationWindow {
 				TextField {
 					id: eta; objectName: "LearnRate"
 					validator: DoubleValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
-				Label { 
-					Layout.rowSpan: 8
-				}
+				Button { 
+					text: "default"; onClicked: cfg.default(cfg.model)  
+				}				
 				Label {
 					text: "weight decay"
 					anchors.right: lambda.left;	anchors.rightMargin: 10
@@ -113,7 +117,11 @@ ApplicationWindow {
 				TextField { 
 					id: lambda;	objectName: "WeightDecay"
 					validator: DoubleValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
+				Button { 
+					text: "print"; onClicked: cfg.print()  
+				}					
 				Label {
 					text: "momentum"
 					anchors.right: mom.left; anchors.rightMargin: 10
@@ -121,6 +129,10 @@ ApplicationWindow {
 				TextField { 
 					id: mom; objectName: "Momentum"
 					validator: DoubleValidator{}
+					onTextChanged: cfg.set(objectName, text)
+				}
+				Label { 
+					Layout.rowSpan: 7
 				}
 				Label {
 					text: "threshold"
@@ -129,6 +141,7 @@ ApplicationWindow {
 				TextField { 
 					id: threshold; objectName: "Threshold"
 					validator: DoubleValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
 				Label {
 					text: "batch size"
@@ -137,6 +150,7 @@ ApplicationWindow {
 				TextField { 
 					id: batch; objectName: "BatchSize"
 					validator: IntValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
 				Label {
 					text: "stop after"
@@ -145,6 +159,7 @@ ApplicationWindow {
 				TextField { 
 					id: stop; objectName: "StopAfter"
 					validator: IntValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
 				Label {
 					text: "log every"
@@ -153,6 +168,7 @@ ApplicationWindow {
 				TextField { 
 					id: log; objectName: "LogEvery"
 					validator: IntValidator{}
+					onTextChanged: cfg.set(objectName, text)
 				}
 				Label {
 					text: "sampler"
@@ -161,6 +177,7 @@ ApplicationWindow {
 				ComboBox { 
 					id: sampler; objectName: "Sampler"
 					model: ["uniform", "random"]
+					onActivated: cfg.set(objectName, model[index])
 				}					
 			}
 		}

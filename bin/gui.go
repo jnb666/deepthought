@@ -62,6 +62,7 @@ func main() {
 func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *network.Stats, ctrl *qml.Ctrl) {
 	var running, started bool
 	var stopCond func(*network.Stats) (bool, bool)
+	run := 0
 
 	startRun := func() {
 		// start new training run
@@ -73,10 +74,16 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 
 	endRun := func(failed bool) {
 		// print stats at end of run
+		run++
+		ctrl.SetRun(run)
+		fmt.Println(s.EndRun(failed))
 		started = false
-		running = false
-		ctrl.Done()
-		fmt.Printf("%s\n\n", s.EndRun(failed))
+		if run >= cfg.MaxRuns {
+			running = false
+			ctrl.Done()
+			fmt.Printf("%s\n\n", s.History())
+			run = 0
+		}
 	}
 
 	for {
@@ -94,14 +101,14 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 			net.Train(s, data, cfg)
 			s.Update(net, data)
 			done, failed := stopCond(s)
-			if s.Epoch%cfg.LogEvery == 0 || done {
+			if cfg.LogEvery > 0 && (s.Epoch%cfg.LogEvery == 0 || done) {
 				fmt.Println(s)
 			}
 			if done {
 				endRun(failed)
 			}
 		case "run": // toggle running mode
-			running = ev.Arg == "start"
+			running = (ev.Arg == "start")
 		case "stats": // print out the stats over runs
 			fmt.Printf("%s\n\n", s.History())
 		case "select": // choose a new data set
@@ -109,6 +116,8 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 			cfg, net, data, _ = network.Load(ev.Arg)
 			cfg.Print()
 			ctrl.Refresh(cfg)
+			running = false
+			started = false
 		case "quit": // exit the program
 			net.Release()
 			blas.Release()

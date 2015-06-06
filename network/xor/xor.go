@@ -19,6 +19,7 @@ func (l Loader) DatasetName() string {
 
 func (l Loader) DefaultConfig() *network.Config {
 	return &network.Config{
+		MaxRuns:   1,
 		MaxEpoch:  1000,
 		LearnRate: 0.5,
 		Threshold: 0.05,

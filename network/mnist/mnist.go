@@ -20,6 +20,7 @@ func (l Loader) DatasetName() string {
 
 func (l Loader) DefaultConfig() *network.Config {
 	return &network.Config{
+		MaxRuns:   1,
 		MaxEpoch:  50,
 		BatchSize: 100,
 		LearnRate: 3.0,
@@ -44,6 +45,7 @@ type Loader2 struct{ Loader }
 
 func (l Loader2) DefaultConfig() *network.Config {
 	return &network.Config{
+		MaxRuns:   1,
 		MaxEpoch:  100,
 		BatchSize: 250,
 		LearnRate: 0.5,

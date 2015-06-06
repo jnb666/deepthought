@@ -2,17 +2,86 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"strconv"
 )
 
+var ConfigDir = os.Getenv("HOME") + "/.deepthought"
+
+// check ConfigDir exists - if not then create it
+func checkConfigDir() error {
+	info, err := os.Stat(ConfigDir)
+	if err == nil && !info.IsDir() {
+		err = fmt.Errorf("%s: not a directory", ConfigDir)
+	} else if os.IsNotExist(err) {
+		err = os.Mkdir(ConfigDir, 0755)
+	}
+	return err
+}
+
+// construct config file name
+func fileName(name string) string {
+	return ConfigDir + "/" + name + ".cfg"
+}
+
 // Print the config to stdout
 func Print(cfg interface{}) {
-	s := reflect.ValueOf(cfg).Elem()
-	for i := 0; i < s.NumField(); i++ {
-		fmt.Printf("%12s : %v\n", s.Type().Field(i).Name, s.Field(i).Interface())
+	for _, key := range Keys(cfg) {
+		fmt.Printf("%12s : %v\n", key, Get(cfg, key))
 	}
+}
+
+// Update values in config struct cfg to in
+func Update(cfg, in interface{}) {
+	for _, key := range Keys(cfg) {
+		Set(cfg, key, Get(in, key))
+	}
+}
+
+// Save config struct to disk
+func Save(cfg interface{}, name string) error {
+	if err := checkConfigDir(); err != nil {
+		return err
+	}
+	buf, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	file := fileName(name)
+	fmt.Println("save config to", file)
+	return ioutil.WriteFile(file, buf, 0644)
+}
+
+// Load struct from disk
+func Load(cfg interface{}, name string) error {
+	if err := checkConfigDir(); err != nil {
+		return err
+	}
+	file := fileName(name)
+	fmt.Println("load config from", file)
+	r, err := os.Open(file)
+	if err != nil {
+		return err
+	}
+	buf, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(buf, cfg)
+}
+
+// Return an array of strings with the struct keys
+func Keys(cfg interface{}) []string {
+	s := reflect.ValueOf(cfg).Elem()
+	keys := make([]string, s.NumField())
+	for i := range keys {
+		keys[i] = s.Type().Field(i).Name
+	}
+	return keys
 }
 
 // Get config value as a string

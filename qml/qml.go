@@ -3,12 +3,11 @@ package qml
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/jnb666/deepthought/config"
 	"github.com/jnb666/deepthought/network"
 	"go/build"
 	"gopkg.in/qml.v1"
-	"reflect"
-	"strings"
 	"sync"
 	"text/template"
 )
@@ -27,19 +26,14 @@ type Ctrl struct {
 	ev       chan Event
 	run      qml.Object
 	plot     qml.Object
+	runLabel qml.Object
 	setNames []string
-	current  int
 }
 
 func NewCtrl(cfg *network.Config, dataSets []string, selected string) *Ctrl {
 	c := new(Ctrl)
-	c.conf = &Config{cfg: cfg}
+	c.conf = &Config{cfg: cfg, Model: selected}
 	c.setNames = dataSets
-	for ix, set := range dataSets {
-		if strings.ToLower(set) == strings.ToLower(selected) {
-			c.current = ix
-		}
-	}
 	c.ev = make(chan Event, 10)
 	c.WG.Add(1)
 	return c
@@ -48,6 +42,8 @@ func NewCtrl(cfg *network.Config, dataSets []string, selected string) *Ctrl {
 func (c *Ctrl) init(root qml.Object) {
 	c.run = root.ObjectByName("runButton")
 	c.plot = root.ObjectByName("plotControl")
+	c.runLabel = root.ObjectByName("runLabel")
+	c.runLabel.Set("text", fmt.Sprintf("run: 0/%d", c.conf.cfg.MaxRuns))
 }
 
 // Get next event from channel, if running is set then auto step
@@ -69,12 +65,11 @@ func (c *Ctrl) Send(typ, arg string) {
 }
 
 // Choose new data set
-func (c *Ctrl) Select(index int) {
-	if index == c.current {
-		return
+func (c *Ctrl) Select(model string) {
+	if model != c.conf.Model {
+		c.conf.Model = model
+		c.ev <- Event{"select", model}
 	}
-	c.current = index
-	c.ev <- Event{"select", c.setNames[index]}
 }
 
 // Callback when run is completed
@@ -84,52 +79,51 @@ func (c *Ctrl) Done() {
 
 // Callback to refresh the plot
 func (c *Ctrl) Refresh(cfg *network.Config) {
-	c.conf.cfg = cfg
 	qml.RunMain(func() {
-		c.plot.Call("update")
+		c.conf.cfg = cfg
 		c.conf.Update()
+		c.plot.Call("update")
+	})
+}
+
+// Callback to set run number
+func (c *Ctrl) SetRun(run int) {
+	qml.RunMain(func() {
+		//c.conf.Lock()
+		label := fmt.Sprintf("run: %d/%d", run, c.conf.cfg.MaxRuns)
+		//c.conf.Unlock()
+		c.runLabel.Set("text", label)
 	})
 }
 
 // Config type manages updating the config settings
 type Config struct {
+	Model string
 	cfg   *network.Config
 	opts  []qml.Object
-	name  []string
-	ready bool
+	keys  []string
 }
 
+// initialise options struct
 func (c *Config) init(root qml.Object) {
-	s := reflect.ValueOf(c.cfg).Elem()
-	c.opts = make([]qml.Object, s.NumField())
-	c.name = make([]string, s.NumField())
-	for i := range c.opts {
-		name := s.Type().Field(i).Name
-		opt := root.ObjectByName(name)
-		if name == "Sampler" {
-			opt.On("activated", func() {
-				config.Set(c.cfg, name, network.SamplerNames[opt.Int("currentIndex")])
-			})
-
-		} else {
-			opt.On("editingFinished", func() {
-				config.Set(c.cfg, name, opt.String("text"))
-			})
-		}
-		c.opts[i] = opt
-		c.name[i] = name
+	c.keys = config.Keys(c.cfg)
+	c.opts = make([]qml.Object, len(c.keys))
+	for i, key := range c.keys {
+		c.opts[i] = root.ObjectByName(key)
 	}
-	c.ready = true
+	c.Update()
+}
+
+// Set config value from GUI
+func (c *Config) Set(key, value string) {
+	config.Set(c.cfg, key, value)
 }
 
 // Update display of config settings
 func (c *Config) Update() {
-	if !c.ready {
-		return
-	}
 	for i, opt := range c.opts {
-		value := config.Get(c.cfg, c.name[i])
-		if c.name[i] == "Sampler" {
+		value := config.Get(c.cfg, c.keys[i])
+		if c.keys[i] == "Sampler" {
 			for i, name := range network.SamplerNames {
 				if name == value {
 					opt.Set("currentIndex", i)
@@ -141,9 +135,33 @@ func (c *Config) Update() {
 	}
 }
 
-// Print current config settings to stdout
+// Set default config settings
+func (c *Config) Default(model string) {
+	if loader, ok := network.Register[model]; ok {
+		config.Update(c.cfg, loader.DefaultConfig())
+	} else {
+		fmt.Println("error loading", model)
+	}
+	c.Update()
+}
+
 func (c *Config) Print() {
 	config.Print(c.cfg)
+}
+
+// Save current config settings to disk
+func (c *Config) Save(model string) {
+	if err := config.Save(c.cfg, model); err != nil {
+		fmt.Println("error saving config:", err)
+	}
+}
+
+// Load config settings from disk
+func (c *Config) Load(model string) {
+	if err := config.Load(c.cfg, model); err != nil {
+		fmt.Println("error loading config")
+	}
+	c.Update()
 }
 
 // MainLoop function is called to draw the scene, it does not return.
@@ -160,7 +178,7 @@ func MainLoop(ctrl *Ctrl, plts ...*Plot) {
 			},
 		}})
 		engine := qml.NewEngine()
-		scene := getScene(plts, ctrl.setNames, ctrl.current)
+		scene := getScene(plts, ctrl.setNames, ctrl.conf.Model)
 		component, err := engine.LoadString("plot", scene)
 		if err != nil {
 			return err
@@ -197,7 +215,7 @@ type plotSel struct {
 }
 
 // construct the scene description
-func getScene(plts []*Plot, names []string, ix int) string {
+func getScene(plts []*Plot, names []string, model string) string {
 	pkg, err := build.Import(importString, "", build.FindOnly)
 	if err != nil {
 		panic("cannot find package " + importString)
@@ -211,6 +229,12 @@ func getScene(plts []*Plot, names []string, ix int) string {
 		ps[i].Name = p.Name
 		ps[i].Index = i
 		ps[i].Selected = (i == 0)
+	}
+	ix := 0
+	for i := range names {
+		if names[i] == model {
+			ix = i
+		}
 	}
 	var buf bytes.Buffer
 	err = tmpl.Execute(&buf, params{Plots: ps, Datasets: names, Index: ix})
