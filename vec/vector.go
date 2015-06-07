@@ -1,3 +1,4 @@
+// Package vector implements vector types for plotting and statistics.
 package vec
 
 import (
@@ -6,9 +7,10 @@ import (
 	"sync"
 )
 
-// Vector holds a slice of float64 numbers. It implements the qml.XYer interface
+// Vector holds a slice of float64 values and errors. It implements the qml.XYer interface
 type Vector struct {
 	data        []float64
+	errors      []float64
 	xmin, xstep float64
 	ymin, ymax  float64
 	defSize     int
@@ -30,6 +32,10 @@ func (v *Vector) XY(i int) (x, y float64) {
 	return v.xmin + v.xstep*float64(i), v.data[i]
 }
 
+func (v *Vector) XYErr(i int) (x, y, yerr float64) {
+	return v.xmin + v.xstep*float64(i), v.data[i], v.errors[i]
+}
+
 func (v *Vector) DataRange() (xmin, ymin, xmax, ymax float64) {
 	return v.xmin, v.ymin, v.xmin + float64(cap(v.data))*v.xstep, v.ymax
 }
@@ -43,6 +49,7 @@ func (v *Vector) SetWidth(w float64) *Vector {
 func (v *Vector) Clear(reset bool) *Vector {
 	if reset {
 		v.data = make([]float64, 0, v.defSize)
+		v.errors = make([]float64, 0, v.defSize)
 		v.ymin, v.ymax = 1e30, -1e30
 		v.xstep = 1
 	} else {
@@ -67,14 +74,15 @@ func (v *Vector) Set(xmin, xstep float64, values []float64) {
 }
 
 // Push method appends a new value
-func (v *Vector) Push(val float64) {
+func (v *Vector) Push(val, err float64) {
 	v.Lock()
 	v.data = append(v.data, val)
-	if val < v.ymin {
-		v.ymin = val
+	v.errors = append(v.errors, err)
+	if val-err < v.ymin {
+		v.ymin = val - err
 	}
-	if val > v.ymax {
-		v.ymax = val
+	if val+err > v.ymax {
+		v.ymax = val + err
 	}
 	v.Unlock()
 }
@@ -102,6 +110,7 @@ func (s *RunningStat) Push(x float64) {
 	s.Count++
 	if s.Count == 1 {
 		s.oldM, s.Mean = x, x
+		s.oldV = 0
 	} else {
 		s.Mean = s.oldM + (x-s.oldM)/s.Count
 		s.Var = s.oldV + (x-s.oldM)*(x-s.Mean)
@@ -116,31 +125,42 @@ func (s *RunningStat) String() string {
 	return fmt.Sprintf("mean = %8.3g  std dev = %8.3g", s.Mean, s.StdDev)
 }
 
-// StatsVector type combines a vector with associated running stats
-type StatsVector struct {
-	*Vector
-	*RunningStat
+// Buffer type is a fixed size circular buffer.
+type Buffer struct {
+	data []float64
+	size int
 }
 
-// NewStatsVector creates a new empty vector
-func NewStatsVector() StatsVector {
-	return StatsVector{New(0), &RunningStat{}}
+// NewBuffer function creates a new buffer with allocated maximum size.
+func NewBuffer(size int) *Buffer {
+	return &Buffer{data: make([]float64, size)}
 }
 
-// Clear method empies the elements fom the vector after each run
-func (v *StatsVector) Clear() {
-	v.Vector.Clear(true)
-	v.RunningStat.Clear()
+// Push method appends an item to the buffer.
+func (b *Buffer) Push(v float64) {
+	if b.size < len(b.data) {
+		b.data[b.size] = v
+		b.size++
+	} else {
+		copy(b.data, b.data[1:])
+		b.data[b.size-1] = v
+	}
 }
 
-// Push method adds a new element and updates the stats
-func (s StatsVector) Push(val float64) {
-	s.Vector.Push(val)
-	s.RunningStat.Push(val)
+// Len method returns the number of items in the buffer.
+func (b *Buffer) Len() int {
+	return b.size
 }
 
-func (s StatsVector) String() string {
-	return s.RunningStat.String()
+// Max method returns the maximum value.
+func (b *Buffer) Max() float64 {
+	max := -1.0e99
+	for _, v := range b.data {
+		if v > max {
+			max = v
+		}
+	}
+	return max
 }
 
 // nicenum returns a "nice" number approximately equal to r

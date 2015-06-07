@@ -1,4 +1,5 @@
-package iris
+// Package mnist loads default configuration for a network using the mnist dataset.
+package mnist
 
 import (
 	"fmt"

@@ -28,13 +28,15 @@ type Ctrl struct {
 	plot     qml.Object
 	runLabel qml.Object
 	setNames []string
+	plots    []*Plot
 }
 
-func NewCtrl(cfg *network.Config, dataSets []string, selected string) *Ctrl {
+func NewCtrl(cfg *network.Config, dataSets []string, selected string, plots []*Plot) *Ctrl {
 	c := new(Ctrl)
 	c.conf = &Config{cfg: cfg, Model: selected}
 	c.setNames = dataSets
 	c.ev = make(chan Event, 10)
+	c.plots = plots
 	c.WG.Add(1)
 	return c
 }
@@ -89,9 +91,7 @@ func (c *Ctrl) Refresh(cfg *network.Config) {
 // Callback to set run number
 func (c *Ctrl) SetRun(run int) {
 	qml.RunMain(func() {
-		//c.conf.Lock()
 		label := fmt.Sprintf("run: %d/%d", run, c.conf.cfg.MaxRuns)
-		//c.conf.Unlock()
 		c.runLabel.Set("text", label)
 	})
 }
@@ -166,19 +166,18 @@ func (c *Config) Load(model string) {
 
 // MainLoop function is called to draw the scene, it does not return.
 // ctrl is the control structure used for sending events and plts is a list of plots to display.
-func MainLoop(ctrl *Ctrl, plts ...*Plot) {
-	if len(plts) < 1 {
-		panic("must provide at least one plot to display")
-	}
+func MainLoop(ctrl *Ctrl) {
 	err := qml.Run(func() error {
-		qml.RegisterTypes("GoExtensions", 1, 0, []qml.TypeSpec{{
-			Init: func(p *Plots, obj qml.Object) {
-				p.Object = obj
-				p.plt = plts
-			},
-		}})
+		if ctrl.plots != nil && len(ctrl.plots) > 0 {
+			qml.RegisterTypes("GoExtensions", 1, 0, []qml.TypeSpec{{
+				Init: func(p *Plots, obj qml.Object) {
+					p.Object = obj
+					p.plt = ctrl.plots
+				},
+			}})
+		}
 		engine := qml.NewEngine()
-		scene := getScene(plts, ctrl.setNames, ctrl.conf.Model)
+		scene := getScene(ctrl.plots, ctrl.setNames, ctrl.conf.Model)
 		component, err := engine.LoadString("plot", scene)
 		if err != nil {
 			return err

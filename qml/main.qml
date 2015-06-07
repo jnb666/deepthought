@@ -31,7 +31,7 @@ ApplicationWindow {
 						objectName: "runButton"; text: "run"; checkable: true
 						onClicked: ctrl.send("run", checked ? "start" : "stop");
 					}
-					Button { text: "stats"; onClicked: ctrl.send("stats", "") }
+					Button { text: "stats"; onClicked: ctrl.send("stats", "print") }
 					Label { text: "data set:" }
 					ComboBox {
 						objectName: "modelList"
@@ -65,6 +65,7 @@ ApplicationWindow {
 						onClicked: plot.select({{ .Index }})
 					}
 					{{ end }}
+					Button { text: "clear stats"; onClicked: ctrl.send("stats", "clear") }
 				}
 			}
 		}

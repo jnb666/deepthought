@@ -1,3 +1,4 @@
+// Package xor loads default configuration for a network using the xor dataset.
 package xor
 
 import (

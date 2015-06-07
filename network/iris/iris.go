@@ -1,3 +1,4 @@
+// Package iris loads default configuration for a network using the iris dataset.
 package iris
 
 import (

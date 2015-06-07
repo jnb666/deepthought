@@ -6,6 +6,15 @@ import (
 	"image/color"
 )
 
+type Position int
+
+const (
+	TopRight Position = iota
+	TopLeft
+	BottomRight
+	BottomLeft
+)
+
 const (
 	xmin, ymin = -0.85, 0.85
 	xmax, ymax = 0.95, -0.92
@@ -18,9 +27,9 @@ var DefaultColors = []color.RGBA{
 	rgb(0, 255, 255),
 	rgb(255, 105, 180),
 	rgb(0, 255, 0),
-	rgb(255, 0, 255),
 	rgb(0, 0, 255),
 	rgb(255, 0, 0),
+	rgb(255, 0, 255),
 }
 
 func rgb(r, g, b uint8) color.RGBA {
@@ -56,7 +65,8 @@ type Plot struct {
 	Title    string
 	Xaxis    *Axis
 	Yaxis    *Axis
-	plotters []Plotter
+	Legend   Position
+	Plotters []Plotter
 }
 
 // NewPlot function creates a new plot with default settings
@@ -64,17 +74,22 @@ func NewPlot(name, title string, plt ...Plotter) *Plot {
 	p := &Plot{Name: name, Title: title}
 	p.Xaxis = newAxis(true)
 	p.Yaxis = newAxis(false)
-	p.plotters = make([]Plotter, len(plt))
+	p.Plotters = make([]Plotter, len(plt))
 	for i, element := range plt {
-		p.plotters[i] = element
-		p.plotters[i].SetColor(Color(i))
+		p.Plotters[i] = element
+		p.Plotters[i].SetColor(Color(i))
 	}
 	return p
 }
 
 // Add method adds elements to the plot
 func (p *Plot) Add(plt ...Plotter) {
-	p.plotters = append(p.plotters, plt...)
+	p.Plotters = append(p.Plotters, plt...)
+}
+
+// Clear method removes all the ploters from the plot
+func (p *Plot) Clear() {
+	p.Plotters = []Plotter{}
 }
 
 // Switch the plot to display
@@ -111,60 +126,43 @@ func (ps *Plots) Paint(paint *qml.Painter) {
 	gl.Clear(GL.COLOR_BUFFER_BIT)
 	// refresh the plot data
 	p := ps.plt[ps.current]
-	for _, plt := range p.plotters {
+	for _, plt := range p.Plotters {
 		plt.Refresh()
 	}
-	// rescale the axes
-	xmin, xmax := big, -big
-	ymin, ymax := big, -big
-	scalex := false
-	for _, plt := range p.plotters {
-		min, max := plt.DataRange()
-		xmin = fmin(xmin, min.X)
-		xmax = fmax(xmax, max.X)
-		ymin = fmin(ymin, min.Y)
-		ymax = fmax(ymax, max.Y)
-		if !plt.Scaled() {
-			scalex = true
-		}
-	}
-	p.Xaxis.Rescale(xmin, xmax)
-	p.Yaxis.Rescale(ymin, ymax)
-	if !scalex {
-		// foce the maximum to match the plot
-		p.Xaxis.max = fmin(p.Xaxis.max, xmax)
-		if p.Xaxis.max != prevxmax {
-			prevxmax = p.Xaxis.max
-		}
-	}
-
 	// draw the axes
-	setColor(gl, ps.Color)
-	p.Xaxis.paint(gl, ps)
-	p.Yaxis.paint(gl, ps)
+	ps.drawAxes(gl, p)
 	// draw the plotters
-	var legendWidth, legendHeight float32
-	for _, plt := range p.plotters {
+	for _, plt := range p.Plotters {
 		plt.Plot(gl, p)
-		w, h := plt.LegendSize(ps)
-		if w > legendWidth {
-			legendWidth = w
-		}
-		if h > legendHeight {
-			legendHeight = h
-		}
 	}
-	// draw the legend at top right of the screen
-	ypos := float32(1)
-	for _, plt := range p.plotters {
-		gl.PushMatrix()
-		gl.Translatef(1-legendWidth, ypos, 0)
-		plt.DrawLegend(gl, ps)
-		gl.PopMatrix()
-		ypos -= legendHeight
-	}
+	// draw the legend
+	ps.drawLegend(gl, p)
 	// draw the plot title
 	ps.font.DrawText(gl, 0.5-ps.TextWidth(p.Title)/2, 1+ps.TextHeight(), 0, p.Title)
+}
+
+func (ps *Plots) drawLegend(gl *GL.GL, p *Plot) {
+	var width, height float32
+	for _, plt := range p.Plotters {
+		w, h := plt.LegendSize(ps)
+		width = fmax(width, w)
+		height = fmax(height, h)
+	}
+	ypos := float32(1)
+	if p.Legend == BottomLeft || p.Legend == BottomRight {
+		ypos = height * float32(len(p.Plotters))
+	}
+	for _, plt := range p.Plotters {
+		gl.PushMatrix()
+		if p.Legend == TopLeft || p.Legend == BottomLeft {
+			gl.Translatef(0, ypos, 0)
+		} else {
+			gl.Translatef(1-width, ypos, 0)
+		}
+		plt.DrawLegend(gl, ps)
+		gl.PopMatrix()
+		ypos -= height
+	}
 }
 
 // Trans method converts from plot to screen coordinates
@@ -174,8 +172,8 @@ func (p *Plot) Trans(x0, y0 float32) (x1, y1 float32) {
 	return
 }
 
-// Rescale method adjusts the transform from screen to plot coordinates
-func (p *Plot) Rescale(gl *GL.GL) {
+// rescale method adjusts the transform from screen to plot coordinates
+func (p *Plot) rescale(gl *GL.GL) {
 	gl.Scalef(1/(p.Xaxis.max-p.Xaxis.min), 1/(p.Yaxis.max-p.Yaxis.min), 1)
 	gl.Translatef(-p.Xaxis.min, -p.Yaxis.min, 0)
 }

@@ -25,19 +25,17 @@ type Stats struct {
 	Test       *StatsData
 	Train      *StatsData
 	Valid      *StatsData
-	RunTime    vec.StatsVector
-	RegError   vec.StatsVector
-	ClsError   vec.StatsVector
+	RunTime    *vec.RunningStat
+	RegError   *vec.RunningStat
+	ClsError   *vec.RunningStat
 }
 
 // StatsData stores vectors with the errors and classification errors
 type StatsData struct {
-	Error         *vec.Vector
-	ClassError    *vec.Vector
-	AvgError      *vec.Vector
-	AvgClassError *vec.Vector
-	ErrorHist     *vec.Vector
-	HistMax       float64
+	Error      *vec.Vector
+	ClassError *vec.Vector
+	ErrorHist  *vec.Vector
+	HistMax    float64
 }
 
 // NewStats function returns a new stats struct.
@@ -46,20 +44,18 @@ func NewStats() *Stats {
 		Test:     newStatsData(),
 		Train:    newStatsData(),
 		Valid:    newStatsData(),
-		RunTime:  vec.NewStatsVector(),
-		RegError: vec.NewStatsVector(),
-		ClsError: vec.NewStatsVector(),
+		RunTime:  &vec.RunningStat{},
+		RegError: &vec.RunningStat{},
+		ClsError: &vec.RunningStat{},
 	}
 }
 
 func newStatsData() *StatsData {
 	return &StatsData{
-		Error:         vec.New(0),
-		ClassError:    vec.New(0),
-		AvgError:      vec.New(0),
-		AvgClassError: vec.New(0),
-		ErrorHist:     vec.New(histBins),
-		HistMax:       histMax,
+		Error:      vec.New(0),
+		ClassError: vec.New(0),
+		ErrorHist:  vec.New(histBins),
+		HistMax:    histMax,
 	}
 }
 
@@ -94,7 +90,8 @@ func (d *StatsData) clear(reset bool) {
 
 // EndRun method updates per run statistics and returns the stats.
 func (s *Stats) EndRun(failed bool) string {
-	s.RunTime.Push(time.Since(s.StartTime).Seconds())
+	runtime := time.Since(s.StartTime).Seconds()
+	s.RunTime.Push(runtime)
 	test := s.Test
 	if test.Error.Len() == 0 {
 		test = s.Train
@@ -110,7 +107,7 @@ func (s *Stats) EndRun(failed bool) string {
 	}
 	s.Runs++
 	status += fmt.Sprintf("  epochs=%d  run time=%.2fs  reg error=%.4f  class error=%.1f%%",
-		s.Epoch, s.RunTime.Last(), s.RegError.Last(), 100*s.ClsError.Last())
+		s.Epoch, runtime, test.Error.Last(), 100*test.ClassError.Last())
 	return status
 }
 
@@ -207,9 +204,7 @@ func (s *StatsData) update(n *Network, d *data.Data, samples int) int {
 	s.ErrorHist.Lock()
 	totalError, classError := n.GetError(samples, d, s.ErrorHist, s.HistMax)
 	s.ErrorHist.Unlock()
-	s.Error.Push(totalError)
-	s.ClassError.Push(classError)
-	s.AvgError.Push(totalError)
-	s.AvgClassError.Push(classError)
+	s.Error.Push(totalError, 0)
+	s.ClassError.Push(classError, 0)
 	return samples
 }

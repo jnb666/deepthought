@@ -20,13 +20,15 @@ type Plotter interface {
 	DrawLegend(gl *GL.GL, ps *Plots)
 	DataRange() (min, max Point)
 	SetColor(c color.RGBA)
+	SetName(n string)
 	Scaled() bool
 }
 
 type XYer interface {
 	Len() int
 	BinWidth() float64
-	XY(i int) (x float64, y float64)
+	XY(i int) (x, y float64)
+	XYErr(i int) (x, y, yerr float64)
 	DataRange() (xmin, ymin, xmax, ymax float64)
 	Lock()
 	Unlock()
@@ -51,7 +53,6 @@ type plotter struct {
 
 func newPlotter(name string) *plotter {
 	return &plotter{
-		pts:   []Point{},
 		Name:  name,
 		Color: DefaultColors[0],
 	}
@@ -60,6 +61,8 @@ func newPlotter(name string) *plotter {
 func (pt *plotter) Scaled() bool { return false }
 
 func (pt *plotter) SetColor(c color.RGBA) { pt.Color = c }
+
+func (pt *plotter) SetName(n string) { pt.Name = n }
 
 // DataRange method gives the x and y range
 func (pt *plotter) DataRange() (min, max Point) {
@@ -114,7 +117,7 @@ func (l *Line) Plot(gl *GL.GL, p *Plot) {
 	gl.LineWidth(l.Width)
 	setColor(gl, l.Color)
 	gl.PushMatrix()
-	p.Rescale(gl)
+	p.rescale(gl)
 	gl.Begin(GL.LINE_STRIP)
 	for _, pt := range l.pts {
 		gl.Vertex2f(pt.X, pt.Y)
@@ -141,9 +144,11 @@ func (l *Line) Refresh() {
 // Points plotter represents an xy scatter plot
 type Points struct {
 	*plotter
-	xdata     XYer
-	ydata     XYer
-	PointSize float32
+	errors     []Point
+	xdata      XYer
+	ydata      XYer
+	PointSize  float32
+	DrawErrors bool
 }
 
 // NewPoints function creates a new scatter plot
@@ -163,17 +168,27 @@ func (d *Points) Plot(gl *GL.GL, p *Plot) {
 	}
 	gl.PushAttrib(GL.CURRENT_BIT)
 	setColor(gl, d.Color)
-	gl.PointSize(d.PointSize)
 	gl.PushMatrix()
-	p.Rescale(gl)
-	gl.Enable(GL.BLEND)
-	gl.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA)
-	gl.Enable(GL.POINT_SMOOTH)
-	gl.Begin(GL.POINTS)
-	for _, pt := range d.pts {
-		gl.Vertex2f(pt.X, pt.Y)
+	p.rescale(gl)
+	if d.DrawErrors {
+		// draw with x and y error bars
+		for i, pt := range d.pts {
+			err := d.errors[i]
+			drawLine(gl, pt.X-err.X, pt.Y, pt.X+err.X, pt.Y)
+			drawLine(gl, pt.X, pt.Y-err.Y, pt.X, pt.Y+err.Y)
+		}
+	} else {
+		// draw as dots
+		gl.PointSize(d.PointSize)
+		gl.Enable(GL.BLEND)
+		gl.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA)
+		gl.Enable(GL.POINT_SMOOTH)
+		gl.Begin(GL.POINTS)
+		for _, pt := range d.pts {
+			gl.Vertex2f(pt.X, pt.Y)
+		}
+		gl.End()
 	}
-	gl.End()
 	gl.PopMatrix()
 	gl.PopAttrib()
 }
@@ -185,10 +200,12 @@ func (d *Points) Refresh() {
 	defer d.xdata.Unlock()
 	defer d.ydata.Unlock()
 	d.pts = make([]Point, d.xdata.Len())
+	d.errors = make([]Point, d.xdata.Len())
 	for i := range d.pts {
-		_, x := d.xdata.XY(i)
-		_, y := d.ydata.XY(i)
+		_, x, xerr := d.xdata.XYErr(i)
+		_, y, yerr := d.ydata.XYErr(i)
 		d.pts[i] = NewPoint(x, y)
+		d.errors[i] = NewPoint(xerr, yerr)
 	}
 	_, x0, _, x1 := d.xdata.DataRange()
 	_, y0, _, y1 := d.ydata.DataRange()
@@ -223,7 +240,7 @@ func (h *Histogram) Plot(gl *GL.GL, p *Plot) {
 	}
 	gl.PushAttrib(GL.CURRENT_BIT)
 	gl.PushMatrix()
-	p.Rescale(gl)
+	p.rescale(gl)
 	// fill with transparency
 	if h.Fill {
 		fill := h.Color
