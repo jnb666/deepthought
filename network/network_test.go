@@ -58,7 +58,7 @@ func TestTrain(t *testing.T) {
 		LearnRate: 10,
 		Threshold: 0.1,
 		LogEvery:  5,
-		Sampler:   UniformSampler(d.Train.NumSamples),
+		Sampler:   "uniform",
 	}
 	stopFunc := StopCriteria(cfg)
 	s := NewStats()
