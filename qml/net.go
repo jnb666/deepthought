@@ -20,7 +20,7 @@ type Network struct {
 	Index      int
 	Background color.RGBA
 	Color      color.RGBA
-	font       Font
+	font       *Font
 	width      int
 	height     int
 }
@@ -56,7 +56,7 @@ func (n *Network) pty(y int) float32 {
 func (n *Network) Paint(paint *qml.Painter) {
 	gl := GL.API(paint)
 	n.width, n.height = n.Int("width"), n.Int("height")
-	if n.font == 0 {
+	if n.font == nil {
 		n.font = loadFont(gl, DefaultFontName, DefaultFontScale, n.ptx, n.pty)
 	}
 	// x,y from -1 to +1

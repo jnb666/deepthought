@@ -5,9 +5,9 @@ import (
 	"math/rand"
 )
 
-var Samplers = map[string]Sampler{
-	"uniform": &UniformSampler{},
-	"random":  &RandomSampler{},
+var samplers = map[string]Sampler{
+	"uniform": &uniformSampler{},
+	"random":  &randomSampler{},
 }
 
 var SamplerNames = []string{"uniform", "random"}
@@ -20,21 +20,29 @@ type Sampler interface {
 	Release()
 }
 
-// UniformSampler loops over minibatches in order with no randomisation.
-type UniformSampler struct {
+// NewSampler function creates a new sampler of the given type.
+func NewSampler(typ string) Sampler {
+	if s, ok := samplers[typ]; ok {
+		return s
+	}
+	panic("sampler of type " + typ + " not found")
+}
+
+// uniformSampler loops over minibatches in order with no randomisation.
+type uniformSampler struct {
 	samples int
 	batch   int
 	start   int
 }
 
-func (s *UniformSampler) Init(samples, batchSize int) Sampler {
+func (s *uniformSampler) Init(samples, batchSize int) Sampler {
 	s.samples = samples
 	s.batch = batchSize
 	s.start = 0
 	return s
 }
 
-func (s *UniformSampler) Next() bool {
+func (s *uniformSampler) Next() bool {
 	if s.start+s.batch < s.samples {
 		s.start += s.batch
 		return true
@@ -42,7 +50,7 @@ func (s *UniformSampler) Next() bool {
 	return false
 }
 
-func (s *UniformSampler) Sample(in, out blas.Matrix) {
+func (s *uniformSampler) Sample(in, out blas.Matrix) {
 	end := s.start + s.batch
 	if in.Rows() < end {
 		end = in.Rows()
@@ -50,16 +58,16 @@ func (s *UniformSampler) Sample(in, out blas.Matrix) {
 	out.Copy(in.Row(s.start, end), nil)
 }
 
-func (s *UniformSampler) Release() {}
+func (s *uniformSampler) Release() {}
 
-// RandomSampler shuffles the indices randomly on reach run.
-type RandomSampler struct {
+// randomSampler shuffles the indices randomly on reach run.
+type randomSampler struct {
 	index blas.Matrix
 	batch int
 	start int
 }
 
-func (s *RandomSampler) Init(samples, batchSize int) Sampler {
+func (s *randomSampler) Init(samples, batchSize int) Sampler {
 	s.batch = batchSize
 	s.start = 0
 	s.index = blas.New(samples, 1)
@@ -71,7 +79,7 @@ func (s *RandomSampler) Init(samples, batchSize int) Sampler {
 	return s
 }
 
-func (s *RandomSampler) Next() bool {
+func (s *randomSampler) Next() bool {
 	if s.start+s.batch < s.index.Rows() {
 		s.start += s.batch
 		return true
@@ -79,7 +87,7 @@ func (s *RandomSampler) Next() bool {
 	return false
 }
 
-func (s *RandomSampler) Sample(in, out blas.Matrix) {
+func (s *randomSampler) Sample(in, out blas.Matrix) {
 	end := s.start + s.batch
 	if s.index.Rows() < end {
 		end = s.index.Rows()
@@ -87,6 +95,6 @@ func (s *RandomSampler) Sample(in, out blas.Matrix) {
 	out.Copy(in, s.index.Row(s.start, end))
 }
 
-func (s *RandomSampler) Release() {
+func (s *randomSampler) Release() {
 	s.index.Release()
 }

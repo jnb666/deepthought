@@ -4,7 +4,6 @@ package network
 import (
 	"fmt"
 	"github.com/jnb666/deepthought/blas"
-	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/vec"
 	"math"
 	"math/rand"
@@ -181,7 +180,7 @@ func (n *Network) Classify(output blas.Matrix) blas.Matrix {
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 // samples parameter is the maximum number of samples to check.
-func (n *Network) GetError(samples int, d *data.Data, hist *vec.Vector, hmax float64) (totalErr, classErr float64) {
+func (n *Network) GetError(samples int, d *Data, hist *vec.Vector, hmax float64) (totalErr, classErr float64) {
 	totalError := new(vec.RunningStat)
 	classError := new(vec.RunningStat)
 	cols := d.Output.Cols()
@@ -305,14 +304,14 @@ func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum flo
 }
 
 // Train method trains the network on the given training set for one epoch.
-func (n *Network) Train(s *Stats, d *data.Dataset, cfg *Config) {
+func (n *Network) Train(s *Stats, d *Dataset, cfg *Config) {
 	if n.input == nil {
 		n.input = blas.New(n.BatchSize, d.Train.Input.Cols())
 		n.output = blas.New(n.BatchSize, d.Train.Output.Cols())
 	}
 	s.Epoch++
 	s.StartEpoch = time.Now()
-	smp := Samplers[cfg.Sampler].Init(d.Train.NumSamples, n.BatchSize)
+	smp := NewSampler(cfg.Sampler).Init(d.Train.NumSamples, n.BatchSize)
 	batch := 0
 	for {
 		smp.Sample(d.Train.Input, n.input)

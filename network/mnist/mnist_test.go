@@ -1,11 +1,7 @@
-package data_test
+package mnist
 
 import (
 	"github.com/jnb666/deepthought/blas"
-	"github.com/jnb666/deepthought/data"
-	_ "github.com/jnb666/deepthought/data/iris"
-	_ "github.com/jnb666/deepthought/data/mnist"
-	_ "github.com/jnb666/deepthought/data/xor"
 	"testing"
 )
 
@@ -13,26 +9,11 @@ func init() {
 	blas.Init(blas.Native32)
 }
 
-func load(t *testing.T, name string, max int) *data.Dataset {
-	s, err := data.Load(name, max)
+func TestMNIST(t *testing.T) {
+	s, err := Loader{}.Load(0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s
-}
-
-func TestIris(t *testing.T) {
-	s := load(t, "iris", 10)
-	t.Log(s.Test)
-}
-
-func TestXor(t *testing.T) {
-	s := load(t, "xor", 0)
-	t.Log(s.Train)
-}
-
-func TestMNIST(t *testing.T) {
-	s := load(t, "mnist", 0)
 	entry := 2
 	img := s.Train.Input.Row(entry, entry+1).Reshape(28, 28, true)
 	in := blas.New(28, 28).Copy(img, nil)

@@ -3,13 +3,9 @@ package network
 import (
 	"fmt"
 	"github.com/jnb666/deepthought/config"
-	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/vec"
 	"sort"
 )
-
-// Register map of all loaders which are available
-var Register = map[string]Loader{}
 
 type Config struct {
 	MaxRuns     int     // number of runs: required
@@ -30,30 +26,23 @@ func (c *Config) Print() {
 
 // Data sets function lists all the registered models.
 func DataSets() (s []string) {
-	for name := range Register {
+	for name := range register {
 		s = append(s, name)
 	}
 	sort.Strings(s)
 	return s
 }
 
-// Loader type is used to load new data sets and associated config.
-type Loader interface {
-	DefaultConfig() *Config
-	DatasetName() string
-	CreateNetwork(cfg *Config, d *data.Dataset) *Network
-}
-
 // Load function loads a data set, creates the network and returns the default config
-func Load(name string) (cfg *Config, net *Network, d *data.Dataset, err error) {
-	loader, ok := Register[name]
+func Load(name string, samples int) (cfg *Config, net *Network, d *Dataset, err error) {
+	loader, ok := register[name]
 	if !ok {
 		err = fmt.Errorf("Load: unknown dataset name %s\n", name)
 		return
 	}
-	cfg = loader.DefaultConfig()
+	cfg = loader.Config()
 	config.Load(cfg, name)
-	if d, err = data.Load(loader.DatasetName(), 0); err != nil {
+	if d, err = loader.Load(samples); err != nil {
 		return
 	}
 	net = loader.CreateNetwork(cfg, d)

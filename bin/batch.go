@@ -23,7 +23,7 @@ func main() {
 	flag.Int64Var(&seed, "seed", 0, "random number seed")
 	flag.Parse()
 
-	cfg, net, data, err := network.Load(model)
+	cfg, net, data, err := network.Load(model, 0)
 	if err != nil {
 		fmt.Println(err)
 		return

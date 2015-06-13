@@ -1,41 +1,31 @@
-package network
+package network_test
 
 import (
 	"github.com/jnb666/deepthought/blas"
-	"github.com/jnb666/deepthought/data"
-	_ "github.com/jnb666/deepthought/data/iris"
+	"github.com/jnb666/deepthought/network"
+	_ "github.com/jnb666/deepthought/network/iris"
 	"testing"
 )
 
 func init() {
-	Init(blas.Native32)
-	//Init(blas.OpenCL32)
-}
-
-func createNetwork(samples int) (net *Network, s *data.Dataset, err error) {
-	if s, err = data.Load("iris", samples); err != nil {
-		return
-	}
-	net = New(s.MaxSamples, s.OutputToClass)
-	net.AddLayer(s.NumInputs, s.NumOutputs, Linear)
-	net.AddQuadraticOutput(s.NumOutputs, Sigmoid)
-	net.SetRandomWeights()
-	return
+	network.Init(blas.Native32)
 }
 
 func TestNetwork(t *testing.T) {
-	net, _, err := createNetwork(10)
+	_, net, _, err := network.Load("iris", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
+	net.SetRandomWeights()
 	t.Log(net)
 }
 
 func TestFeedForward(t *testing.T) {
-	net, d, err := createNetwork(10)
+	_, net, d, err := network.Load("iris", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
+	net.SetRandomWeights()
 	t.Log(net)
 	t.Logf("input:\n%s\n", d.Test.Input)
 	output := net.FeedForward(d.Test.Input)
@@ -46,31 +36,23 @@ func TestFeedForward(t *testing.T) {
 }
 
 func TestTrain(t *testing.T) {
-	net, d, err := createNetwork(0)
+	cfg, net, d, err := network.Load("iris", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.Print()
+	net.SetRandomWeights()
+	t.Log(net)
 	t.Logf("read %d test %d train and %d validation samples: max=%d\n",
 		d.Test.NumSamples, d.Train.NumSamples, d.Valid.NumSamples, d.MaxSamples)
-	t.Log(net)
-	cfg := &Config{
-		MaxEpoch:  200,
-		LearnRate: 10,
-		Threshold: 0.1,
-		LogEvery:  5,
-		Sampler:   "uniform",
-	}
-	stopFunc := StopCriteria(cfg)
-	s := NewStats()
+	stopFunc := network.StopCriteria(cfg)
+	s := network.NewStats()
 	s.StartRun()
 	var done, failed bool
 	for !done {
 		net.Train(s, d, cfg)
 		s.Update(net, d)
 		done, failed = stopFunc(s)
-		if s.Epoch%cfg.LogEvery == 0 || done {
-			t.Log(s)
-		}
 	}
 	t.Log(s.EndRun(failed))
 	if failed {

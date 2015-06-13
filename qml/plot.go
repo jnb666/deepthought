@@ -54,7 +54,7 @@ type Plots struct {
 	GridColor  color.RGBA
 	plt        []*Plot
 	current    int
-	font       Font
+	font       *Font
 	width      int
 	height     int
 }
@@ -109,7 +109,7 @@ func (ps *Plots) pty(y int) float32 {
 
 // returns height of the current font in model coords
 func (ps *Plots) TextHeight() float32 {
-	return ps.pty(fontHeight)
+	return ps.pty(ps.font.Height())
 }
 
 // returns the width of string in model coords
@@ -121,7 +121,7 @@ func (ps *Plots) TextWidth(s string) float32 {
 func (ps *Plots) Paint(paint *qml.Painter) {
 	gl := GL.API(paint)
 	ps.width, ps.height = ps.Int("width"), ps.Int("height")
-	if ps.font == 0 {
+	if ps.font == nil {
 		ps.font = loadFont(gl, DefaultFontName, DefaultFontScale, ps.ptx, ps.pty)
 	}
 	setView(gl, ps.width, ps.height, xmin, ymin, xmax, ymax)

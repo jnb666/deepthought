@@ -20,96 +20,107 @@ const (
 )
 
 var (
-	DefaultFontName  = "NimbusSanL-Bold.ttf"
+	DefaultFontName  = "NimbusSanL-Bold"
 	DefaultFontScale = 14
-	fontTex          glbase.Texture
-	fontChars        []glyph
-	fontHeight       int
-	fontWidth        int
+	fontCache        = map[string]*fontTex{}
 	mutex            sync.Mutex
 )
 
-// A Glyph describes metrics for a single font glyph.
+// A Font allows rendering of text to an OpenGL context.
+type Font struct {
+	*fontTex
+	list uint32
+}
+
+type fontTex struct {
+	tex    glbase.Texture
+	chars  []glyph
+	height int
+	width  int
+}
+
 type glyph struct {
 	x, adv int
 }
 
-// A Font allows rendering of text to an OpenGL context.
-type Font uint32
+// draw truetype font to an image
+func getFontTex(gl *GL.GL, fontName string, scale int) *fontTex {
+	f := new(fontTex)
+	fontFile, err := fontPath(fontName)
+	if err != nil {
+		panic(err)
+	}
+	r, err := os.Open(fontFile)
+	if err != nil {
+		panic(err)
+	}
+	defer r.Close()
+	data, err := ioutil.ReadAll(r)
+	if err != nil {
+		panic(err)
+	}
+	ttf, err := truetype.Parse(data)
+	if err != nil {
+		panic(err)
+	}
+	// get metrics
+	gb := ttf.Bounds(int32(scale))
+	f.width = int(gb.XMax - gb.XMin)
+	f.height = int(gb.YMax - gb.YMin)
+	// draw chars to image
+	count := highChar - lowChar + 1
+	f.chars = make([]glyph, count)
+	imgX, imgY := pow2(count*f.width), pow2(f.height)
+	img := image.NewRGBA(image.Rect(0, 0, imgX, imgY))
+	c := freetype.NewContext()
+	c.SetDPI(72)
+	c.SetFont(ttf)
+	c.SetFontSize(float64(scale))
+	c.SetClip(img.Bounds())
+	c.SetDst(img)
+	c.SetSrc(image.White)
+	gx := 0
+	ch := rune(lowChar)
+	for i := range f.chars {
+		index := ttf.Index(ch)
+		metric := ttf.HMetric(int32(scale), index)
+		f.chars[i].adv = int(metric.AdvanceWidth)
+		f.chars[i].x = int(gx)
+		pt := freetype.Pt(int(gx), imgY-5)
+		c.DrawString(string(ch), pt)
+		gx += f.width
+		ch++
+	}
+	// create texture
+	tex := gl.GenTextures(1)
+	f.tex = tex[0]
+	gl.BindTexture(GL.TEXTURE_2D, f.tex)
+	gl.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
+	gl.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
+	gl.TexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imgX, imgY, 0, GL.RGBA, GL.UNSIGNED_BYTE, img.Pix)
+	return f
+}
 
 // LoadFont loads a truetype font from the given stream and applies the given font scale in points.
-func loadFont(gl *GL.GL, fontName string, scale int, ptx, pty func(int) float32) Font {
+func loadFont(gl *GL.GL, fontName string, scale int, ptx, pty func(int) float32) *Font {
 	mutex.Lock()
 	defer mutex.Unlock()
-	count := highChar - lowChar + 1
-	if fontTex == 0 {
-		fontFile, err := fontPath(fontName)
-		if err != nil {
-			panic(err)
-		}
-		r, err := os.Open(fontFile)
-		if err != nil {
-			panic(err)
-		}
-		defer r.Close()
-		data, err := ioutil.ReadAll(r)
-		if err != nil {
-			panic(err)
-		}
-		ttf, err := truetype.Parse(data)
-		if err != nil {
-			panic(err)
-		}
-		// get metrics
-		glyphs := make([]glyph, count)
-		gb := ttf.Bounds(int32(scale))
-		gw := int(gb.XMax - gb.XMin)
-		gh := int(gb.YMax - gb.YMin)
-		fontHeight = gh
-		fontWidth = gw
-		// draw chars to image
-		imgX, imgY := pow2(count*gw), pow2(gh)
-		img := image.NewRGBA(image.Rect(0, 0, imgX, imgY))
-		c := freetype.NewContext()
-		c.SetDPI(72)
-		c.SetFont(ttf)
-		//c.SetHinting(freetype.FullHinting)
-		c.SetFontSize(float64(scale))
-		c.SetClip(img.Bounds())
-		c.SetDst(img)
-		c.SetSrc(image.White)
-		gx := 0
-		ch := rune(lowChar)
-		for i := range glyphs {
-			index := ttf.Index(ch)
-			metric := ttf.HMetric(int32(scale), index)
-			glyphs[i].adv = int(metric.AdvanceWidth)
-			glyphs[i].x = int(gx)
-			pt := freetype.Pt(int(gx), imgY-5)
-			c.DrawString(string(ch), pt)
-			gx += gw
-			ch++
-		}
-		fontChars = glyphs
-		// create texture
-		tex := gl.GenTextures(1)
-		fmt.Println("create texture", tex[0])
-		gl.BindTexture(GL.TEXTURE_2D, tex[0])
-		gl.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_MIN_FILTER, GL.NEAREST)
-		gl.TexParameteri(GL.TEXTURE_2D, GL.TEXTURE_MAG_FILTER, GL.NEAREST)
-		gl.TexImage2D(GL.TEXTURE_2D, 0, GL.RGBA, imgX, imgY, 0, GL.RGBA, GL.UNSIGNED_BYTE, img.Pix)
-		fontTex = tex[0]
+	name := fmt.Sprintf("%s-%d", fontName, scale)
+	if _, ok := fontCache[name]; !ok {
+		fontCache[name] = getFontTex(gl, fontName, scale)
 	}
+	f := fontCache[name]
 	// create command lists for this font
-	font := gl.GenLists(int32(count))
-	imgX, imgY := pow2(count*fontWidth), pow2(fontHeight)
-	ghf := pty(fontHeight)
-	thf := float32(fontHeight) / float32(imgY)
-	for i, g := range fontChars {
+	count := highChar - lowChar + 1
+	base := gl.GenLists(int32(count))
+	imgX, imgY := pow2(count*f.width), pow2(f.height)
+	ghf := pty(f.height)
+	thf := float32(f.height) / float32(imgY)
+	for i, g := range f.chars {
 		gwf := ptx(g.adv)
 		twf := float32(g.adv) / float32(imgX)
 		txf := float32(g.x) / float32(imgX)
-		gl.NewList(font+uint32(i), GL.COMPILE)
+		gl.NewList(base+uint32(i), GL.COMPILE)
 		gl.Begin(GL.QUADS)
 		gl.TexCoord2f(txf, 1)
 		gl.Vertex2f(0, -ghf)
@@ -126,19 +137,27 @@ func loadFont(gl *GL.GL, fontName string, scale int, ptx, pty func(int) float32)
 	if errno := gl.GetError(); errno != GL.NO_ERROR {
 		panic(fmt.Errorf("GL error %d loading fonts\n", errno))
 	}
-	return Font(font)
+	return &Font{
+		fontTex: f,
+		list:    base,
+	}
+}
+
+// Height method returns font height in points
+func (f *Font) Height() int {
+	return f.height
 }
 
 // Size method returns the horizontal size of string in points
-func (f Font) Size(s string) (w int) {
+func (f *Font) Size(s string) (w int) {
 	for _, ch := range s {
-		w += fontChars[ch-lowChar].adv
+		w += f.chars[ch-lowChar].adv
 	}
 	return
 }
 
 // DrawText method draws the given string at the specified coordinates.
-func (f Font) DrawText(gl *GL.GL, xpos, ypos, angle float32, str string) error {
+func (f *Font) DrawText(gl *GL.GL, xpos, ypos, angle float32, str string) error {
 	if len(str) == 0 {
 		return nil
 	}
@@ -151,14 +170,14 @@ func (f Font) DrawText(gl *GL.GL, xpos, ypos, angle float32, str string) error {
 	gl.Enable(GL.BLEND)
 	gl.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA)
 	gl.TexEnvf(GL.TEXTURE_ENV, GL.TEXTURE_ENV_MODE, GL.MODULATE)
-	gl.BindTexture(GL.TEXTURE_2D, fontTex)
+	gl.BindTexture(GL.TEXTURE_2D, f.tex)
 
 	gl.PushMatrix()
 	gl.Translatef(xpos, ypos, 0)
 	if angle != 0 {
 		gl.Rotatef(angle, 0, 0, 1)
 	}
-	gl.ListBase(uint32(f))
+	gl.ListBase(f.list)
 	gl.CallLists(len(indices), GL.UNSIGNED_INT, indices)
 	gl.PopMatrix()
 	gl.PopAttrib()
@@ -182,6 +201,7 @@ func pow2(x int) int {
 
 // locate font file on disk
 func fontPath(name string) (string, error) {
+	name += ".ttf"
 	for _, d := range vg.FontDirs {
 		p := filepath.Join(d, name)
 		if _, err := os.Stat(p); err != nil {

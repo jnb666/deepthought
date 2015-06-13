@@ -27,7 +27,7 @@ type Axis struct {
 func newAxis(horiz bool) *Axis {
 	ax := new(Axis)
 	ax.horiz = horiz
-	ax.Rescale(0, 1)
+	ax.rescale(0, 1)
 	return ax
 }
 
@@ -45,8 +45,8 @@ func (ps *Plots) drawAxes(gl *GL.GL, p *Plot) {
 			scalex = true
 		}
 	}
-	p.Xaxis.Rescale(xmin, xmax)
-	p.Yaxis.Rescale(ymin, ymax)
+	p.Xaxis.rescale(xmin, xmax)
+	p.Yaxis.rescale(ymin, ymax)
 	if !scalex && len(p.Plotters) > 0 {
 		// force the maximum to match the plot
 		p.Xaxis.max = fmin(p.Xaxis.max, xmax)
@@ -108,7 +108,7 @@ func (ax *Axis) paint(gl *GL.GL, ps *Plots) {
 }
 
 // Rescale method resets the axis scale
-func (ax *Axis) Rescale(min, max float32) {
+func (ax *Axis) rescale(min, max float32) {
 	if !ax.FloatZero && min > 0 {
 		min = 0
 	}

@@ -1,5 +1,4 @@
-// Package data contains routines to load data sets into matrices for neural network processing.
-package data
+package network
 
 import (
 	"fmt"
@@ -7,12 +6,24 @@ import (
 	"os"
 )
 
-// Register map of all loaders which are available
-var Register = map[string]Loader{}
+var register = map[string]Loader{}
 
 // Loader interface is used to load a new dataset
 type Loader interface {
 	Load(samples int) (*Dataset, error)
+	Config() *Config
+	CreateNetwork(cfg *Config, d *Dataset) *Network
+}
+
+// Register function is called on initialisation to make a new dataset available.
+func Register(name string, l Loader) {
+	register[name] = l
+}
+
+// GetLoader function looks up a loader by name.
+func GetLoader(name string) (l Loader, ok bool) {
+	l, ok = register[name]
+	return
 }
 
 // Dataset type represents a set of test, training and validation data
@@ -37,16 +48,6 @@ type Data struct {
 func (d *Data) String() string {
 	return fmt.Sprintf("total samples:%d\ninput:\n%s\noutput:\n%s\nclasses:\n%s",
 		d.NumSamples, d.Input, d.Output, d.Classes)
-}
-
-// Load function loads and returns a new dataset.
-func Load(name string, samples int) (s *Dataset, err error) {
-	if loader, ok := Register[name]; ok {
-		s, err = loader.Load(samples)
-	} else {
-		err = fmt.Errorf("Load: unknown dataset name %s\n", name)
-	}
-	return
 }
 
 // Release method frees any allocated resources

@@ -6,7 +6,6 @@ import (
 
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/config"
-	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/network"
 	"github.com/jnb666/deepthought/qml"
 	"github.com/jnb666/deepthought/vec"
@@ -25,7 +24,7 @@ func main() {
 	flag.Int64Var(&seed, "seed", 0, "random number seed")
 	flag.Parse()
 
-	cfg, net, data, err := network.Load(model)
+	cfg, net, data, err := network.Load(model, 0)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -40,7 +39,7 @@ func main() {
 	ctrl.WG.Wait()
 }
 
-func testData(d *data.Dataset) *data.Data {
+func testData(d *network.Dataset) *network.Data {
 	if d.Test != nil {
 		return d.Test
 	}
@@ -147,7 +146,7 @@ func (p *statsPlot) addPoint(s *network.Stats, cfg *network.Config) {
 }
 
 // train the network
-func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *network.Stats, ctrl *qml.Ctrl, p *statsPlot) {
+func train(cfg *network.Config, net *network.Network, data *network.Dataset, s *network.Stats, ctrl *qml.Ctrl, p *statsPlot) {
 	var running, started bool
 	var stopCond func(*network.Stats) (bool, bool)
 	run := 0
@@ -209,7 +208,7 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 		case "select": // choose a new data set
 			p.clear()
 			s.Reset()
-			cfg, net, data, _ = network.Load(ev.Arg)
+			cfg, net, data, _ = network.Load(ev.Arg, 0)
 			cfg.Print()
 			ctrl.Refresh(cfg, net, testData(data))
 			running = false

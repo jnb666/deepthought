@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jnb666/deepthought/config"
-	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/network"
 	"go/build"
 	"gopkg.in/qml.v1"
@@ -24,7 +23,7 @@ type Event struct {
 type Ctrl struct {
 	conf      *Config
 	network   *network.Network
-	testData  *data.Data
+	testData  *network.Data
 	WG        sync.WaitGroup
 	ev        chan Event
 	net       qml.Object
@@ -36,7 +35,7 @@ type Ctrl struct {
 	plots     []*Plot
 }
 
-func NewCtrl(cfg *network.Config, net *network.Network, testData *data.Data, dataSets []string, selected string, plots []*Plot) *Ctrl {
+func NewCtrl(cfg *network.Config, net *network.Network, testData *network.Data, dataSets []string, selected string, plots []*Plot) *Ctrl {
 	c := new(Ctrl)
 	c.conf = &Config{cfg: cfg, Model: selected}
 	c.network = net
@@ -93,7 +92,7 @@ func (c *Ctrl) Done() {
 }
 
 // Callback to refresh the plot when selecting a new dataset
-func (c *Ctrl) Refresh(cfg *network.Config, net *network.Network, testData *data.Data) {
+func (c *Ctrl) Refresh(cfg *network.Config, net *network.Network, testData *network.Data) {
 	qml.RunMain(func() {
 		c.conf.cfg = cfg
 		c.conf.Update()
@@ -154,8 +153,8 @@ func (c *Config) Update() {
 
 // Set default config settings
 func (c *Config) Default(model string) {
-	if loader, ok := network.Register[model]; ok {
-		config.Update(c.cfg, loader.DefaultConfig())
+	if loader, ok := network.GetLoader(model); ok {
+		config.Update(c.cfg, loader.Config())
 	} else {
 		fmt.Println("error loading", model)
 	}

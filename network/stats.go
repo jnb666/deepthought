@@ -2,7 +2,6 @@ package network
 
 import (
 	"fmt"
-	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/vec"
 	"math"
 	"time"
@@ -139,9 +138,9 @@ func (s *Stats) History() string {
 }
 
 // Update method calculates the error and updates the stats.
-func (s *Stats) Update(n *Network, d *data.Dataset) {
+func (s *Stats) Update(n *Network, d *Dataset) {
 	s.TotalTime += time.Since(s.StartEpoch)
-	dset := []*data.Data{d.Valid, d.Test, d.Train}
+	dset := []*Data{d.Valid, d.Test, d.Train}
 	stats := []*StatsData{s.Valid, s.Test, s.Train}
 	samples := 0
 	for i, set := range stats {
@@ -195,7 +194,7 @@ func scaleHist(hist *vec.Vector, scale float64) float64 {
 	return x + hist.BinWidth()
 }
 
-func (s *StatsData) update(n *Network, d *data.Data, samples int) int {
+func (s *StatsData) update(n *Network, d *Data, samples int) int {
 	if d == nil {
 		return samples
 	}
