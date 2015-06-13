@@ -34,10 +34,17 @@ func main() {
 	cfg.Print()
 	s := network.NewStats()
 	plts := createPlots(s)
-	ctrl := qml.NewCtrl(cfg, dataSets, model, plts)
+	ctrl := qml.NewCtrl(cfg, net, testData(data), dataSets, model, plts)
 	go train(cfg, net, data, s, ctrl, &statsPlot{Plot: plts[3]})
 	qml.MainLoop(ctrl)
 	ctrl.WG.Wait()
+}
+
+func testData(d *data.Dataset) *data.Data {
+	if d.Test != nil {
+		return d.Test
+	}
+	return d.Train
 }
 
 // create the plots
@@ -148,7 +155,6 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 
 	startRun := func() {
 		// start new training run
-		ctrl.SetRun(run + 1)
 		net.SetRandomWeights()
 		stopCond = network.StopCriteria(cfg)
 		if run == 0 {
@@ -161,6 +167,7 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 	endRun := func(failed bool) {
 		// print stats at end of run
 		run++
+		ctrl.SetRun(run)
 		fmt.Println(s.EndRun(failed))
 		started = false
 		if run >= cfg.MaxRuns {
@@ -172,6 +179,7 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 		}
 	}
 
+	startRun()
 	for {
 		ev := ctrl.NextEvent(running)
 		switch ev.Typ {
@@ -203,10 +211,10 @@ func train(cfg *network.Config, net *network.Network, data *data.Dataset, s *net
 			s.Reset()
 			cfg, net, data, _ = network.Load(ev.Arg)
 			cfg.Print()
-			ctrl.Refresh(cfg)
+			ctrl.Refresh(cfg, net, testData(data))
 			running = false
-			started = false
 			run = 0
+			startRun()
 		case "quit": // exit the program
 			net.Release()
 			blas.Release()

@@ -32,7 +32,7 @@ func (l Loader) DefaultConfig() *network.Config {
 func (l Loader) CreateNetwork(cfg *network.Config, d *data.Dataset) *network.Network {
 	fmt.Println("IRIS DATASET: single layer with quadratic cost")
 	net := network.New(d.MaxSamples, d.OutputToClass)
-	net.AddLayer(d.NumInputs, d.NumOutputs, network.Linear)
+	net.AddLayer([]int{d.NumInputs}, d.NumOutputs, network.Linear)
 	net.AddQuadraticOutput(d.NumOutputs, network.Sigmoid)
 	return net
 }

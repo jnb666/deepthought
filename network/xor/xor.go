@@ -32,8 +32,8 @@ func (l Loader) DefaultConfig() *network.Config {
 func (l Loader) CreateNetwork(cfg *network.Config, d *data.Dataset) *network.Network {
 	fmt.Println("XOR DATASET: [2,2,1] layers with quadratic cost and tanh activation")
 	net := network.New(d.MaxSamples, d.OutputToClass)
-	net.AddLayer(2, 2, network.Linear)
-	net.AddLayer(2, 1, network.Tanh)
+	net.AddLayer([]int{2}, 2, network.Linear)
+	net.AddLayer([]int{2}, 1, network.Tanh)
 	net.AddQuadraticOutput(1, network.Tanh)
 	return net
 }

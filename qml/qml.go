@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/jnb666/deepthought/config"
+	"github.com/jnb666/deepthought/data"
 	"github.com/jnb666/deepthought/network"
 	"go/build"
 	"gopkg.in/qml.v1"
@@ -21,19 +22,25 @@ type Event struct {
 
 // Ctrl type is used for communication with the gui
 type Ctrl struct {
-	conf     *Config
-	WG       sync.WaitGroup
-	ev       chan Event
-	run      qml.Object
-	plot     qml.Object
-	runLabel qml.Object
-	setNames []string
-	plots    []*Plot
+	conf      *Config
+	network   *network.Network
+	testData  *data.Data
+	WG        sync.WaitGroup
+	ev        chan Event
+	net       qml.Object
+	run       qml.Object
+	plot      qml.Object
+	runLabel  qml.Object
+	testLabel qml.Object
+	setNames  []string
+	plots     []*Plot
 }
 
-func NewCtrl(cfg *network.Config, dataSets []string, selected string, plots []*Plot) *Ctrl {
+func NewCtrl(cfg *network.Config, net *network.Network, testData *data.Data, dataSets []string, selected string, plots []*Plot) *Ctrl {
 	c := new(Ctrl)
 	c.conf = &Config{cfg: cfg, Model: selected}
+	c.network = net
+	c.testData = testData
 	c.setNames = dataSets
 	c.ev = make(chan Event, 10)
 	c.plots = plots
@@ -46,6 +53,12 @@ func (c *Ctrl) init(root qml.Object) {
 	c.plot = root.ObjectByName("plotControl")
 	c.runLabel = root.ObjectByName("runLabel")
 	c.runLabel.Set("text", fmt.Sprintf("run: 0/%d", c.conf.cfg.MaxRuns))
+}
+
+func (c *Ctrl) initNet(root qml.Object) {
+	c.net = root.ObjectByName("netControl")
+	c.testLabel = root.ObjectByName("testLabel")
+
 }
 
 // Get next event from channel, if running is set then auto step
@@ -79,12 +92,16 @@ func (c *Ctrl) Done() {
 	qml.RunMain(func() { c.run.Set("checked", false) })
 }
 
-// Callback to refresh the plot
-func (c *Ctrl) Refresh(cfg *network.Config) {
+// Callback to refresh the plot when selecting a new dataset
+func (c *Ctrl) Refresh(cfg *network.Config, net *network.Network, testData *data.Data) {
 	qml.RunMain(func() {
 		c.conf.cfg = cfg
 		c.conf.Update()
 		c.plot.Call("update")
+		c.network = net
+		c.testData = testData
+		c.net.Set("index", 0)
+		c.net.Call("update")
 	})
 }
 
@@ -168,14 +185,20 @@ func (c *Config) Load(model string) {
 // ctrl is the control structure used for sending events and plts is a list of plots to display.
 func MainLoop(ctrl *Ctrl) {
 	err := qml.Run(func() error {
-		if ctrl.plots != nil && len(ctrl.plots) > 0 {
-			qml.RegisterTypes("GoExtensions", 1, 0, []qml.TypeSpec{{
+		qml.RegisterTypes("GoExtensions", 1, 0, []qml.TypeSpec{
+			{
 				Init: func(p *Plots, obj qml.Object) {
 					p.Object = obj
 					p.plt = ctrl.plots
 				},
-			}})
-		}
+			},
+			{
+				Init: func(n *Network, obj qml.Object) {
+					n.Object = obj
+					n.ctrl = ctrl
+				},
+			},
+		})
 		engine := qml.NewEngine()
 		scene := getScene(ctrl.plots, ctrl.setNames, ctrl.conf.Model)
 		component, err := engine.LoadString("plot", scene)
@@ -188,8 +211,10 @@ func MainLoop(ctrl *Ctrl) {
 		win := component.CreateWindow(nil)
 		root := win.Root()
 		tabs := root.ObjectByName("tabs")
+		tabs.Set("currentIndex", 2)
+		ctrl.conf.init(tabs.Call("getTab", 2).(qml.Object))
 		tabs.Set("currentIndex", 1)
-		ctrl.conf.init(tabs.Call("getTab", 1).(qml.Object))
+		ctrl.initNet(tabs.Call("getTab", 1).(qml.Object))
 		tabs.Set("currentIndex", 0)
 		ctrl.init(tabs.Call("getTab", 0).(qml.Object))
 		win.Show()

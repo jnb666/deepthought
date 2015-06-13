@@ -7,6 +7,8 @@ import (
 
 // Layer interface type represents one layer in the network.
 type Layer interface {
+	Dims() []int
+	Values() blas.Matrix
 	FeedForward(in blas.Matrix) blas.Matrix
 	BackProp(err blas.Matrix, momentum float64) blas.Matrix
 	Weights() blas.Matrix
@@ -17,6 +19,7 @@ type Layer interface {
 
 type layer struct {
 	nlayer    int
+	dims      []int
 	activ     Activation
 	input     blas.Matrix // Z matrix of value at each node [samples, nin+1]
 	output    blas.Matrix // return value at each node [samples, nout]
@@ -28,10 +31,15 @@ type layer struct {
 }
 
 // AddLayer method adds a new input or hidden layer to the network.
-func (n *Network) AddLayer(nin, nout int, a Activation) {
+func (n *Network) AddLayer(dims []int, nout int, a Activation) {
 	batch := n.BatchSize
+	nin := 1
+	for _, n := range dims {
+		nin *= n
+	}
 	l := &layer{
 		nlayer:    n.Layers,
+		dims:      dims,
 		activ:     a,
 		input:     blas.New(batch, nin+1),
 		output:    blas.New(batch, nout),
@@ -46,6 +54,14 @@ func (n *Network) AddLayer(nin, nout int, a Activation) {
 		l.delta = blas.New(nin, batch)
 	}
 	n.add(l)
+}
+
+func (l *layer) Dims() []int {
+	return l.dims
+}
+
+func (l *layer) Values() blas.Matrix {
+	return l.input
 }
 
 func (l *layer) Release() {
@@ -98,6 +114,7 @@ func (l *layer) BackProp(err blas.Matrix, momentum float64) blas.Matrix {
 
 type outLayer struct {
 	activ  Activation
+	dims   []int
 	values blas.Matrix // Z matrix of values at each node [samples, nodes]
 	delta  blas.Matrix // D matrix of errors at each node [samples, nodes]
 	deriv  blas.Matrix // Fp matrix of derivative of activation fn [nin, samples]
@@ -109,6 +126,7 @@ type outLayer struct {
 func newOutLayer(batch, nodes int, a Activation) *outLayer {
 	l := &outLayer{
 		activ:  a,
+		dims:   []int{nodes},
 		values: blas.New(batch, nodes),
 		delta:  blas.New(batch, nodes),
 		costs:  blas.New(batch, 1),
@@ -118,6 +136,14 @@ func newOutLayer(batch, nodes int, a Activation) *outLayer {
 		l.deriv = blas.New(batch, nodes)
 	}
 	return l
+}
+
+func (l *outLayer) Dims() []int {
+	return l.dims
+}
+
+func (l *outLayer) Values() blas.Matrix {
+	return l.values
 }
 
 func (l *outLayer) Release() {

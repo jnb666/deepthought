@@ -17,7 +17,8 @@ ApplicationWindow {
 		height: 450
 		Component.onCompleted: {
 			addTab("train", tab1)
-			addTab("options", tab2)
+			addTab("test", tab2)
+			addTab("options", tab3)
 		}
 
 		Component {
@@ -71,7 +72,26 @@ ApplicationWindow {
 		}
 
 		Component {
-			id: "tab2"
+			id: tab2
+			ColumnLayout {	
+				RowLayout {
+					spacing: 20
+					Button { text: "<< prev"; onClicked: net.prev() }
+					Label { objectName: "testLabel"}
+					Button { text: "next >>"; onClicked: net.next() }
+				}
+				RowLayout{
+					Network {
+						id: net; objectName: "netControl"
+						width: 800; height: 800
+						background: "#404040"; color: "white"
+					}
+				}
+			}
+		}
+
+		Component {
+			id: tab3
 			GridLayout {
 				columns: 3
 				columnSpacing: 5; rowSpacing: 5

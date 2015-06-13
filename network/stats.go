@@ -20,8 +20,8 @@ type Stats struct {
 	Epoch      int
 	Runs       int
 	RunSuccess int
-	StartTime  time.Time
 	StartEpoch time.Time
+	TotalTime  time.Duration
 	Test       *StatsData
 	Train      *StatsData
 	Valid      *StatsData
@@ -62,6 +62,7 @@ func newStatsData() *StatsData {
 // Reset method resets all the stats
 func (s *Stats) Reset() {
 	s.Epoch = 0
+	s.TotalTime = 0
 	s.Runs = 0
 	s.RunSuccess = 0
 	s.Test.clear(true)
@@ -75,10 +76,10 @@ func (s *Stats) Reset() {
 // StartRun method resets the stats vectors for this run and starts the timer.
 func (s *Stats) StartRun() {
 	s.Epoch = 0
+	s.TotalTime = 0
 	s.Test.clear(false)
 	s.Train.clear(false)
 	s.Valid.clear(false)
-	s.StartTime = time.Now()
 }
 
 func (d *StatsData) clear(reset bool) {
@@ -90,8 +91,7 @@ func (d *StatsData) clear(reset bool) {
 
 // EndRun method updates per run statistics and returns the stats.
 func (s *Stats) EndRun(failed bool) string {
-	runtime := time.Since(s.StartTime).Seconds()
-	s.RunTime.Push(runtime)
+	s.RunTime.Push(s.TotalTime.Seconds())
 	test := s.Test
 	if test.Error.Len() == 0 {
 		test = s.Train
@@ -107,7 +107,7 @@ func (s *Stats) EndRun(failed bool) string {
 	}
 	s.Runs++
 	status += fmt.Sprintf("  epochs=%d  run time=%.2fs  reg error=%.4f  class error=%.1f%%",
-		s.Epoch, runtime, test.Error.Last(), 100*test.ClassError.Last())
+		s.Epoch, s.TotalTime.Seconds(), test.Error.Last(), 100*test.ClassError.Last())
 	return status
 }
 
@@ -140,6 +140,7 @@ func (s *Stats) History() string {
 
 // Update method calculates the error and updates the stats.
 func (s *Stats) Update(n *Network, d *data.Dataset) {
+	s.TotalTime += time.Since(s.StartEpoch)
 	dset := []*data.Data{d.Valid, d.Test, d.Train}
 	stats := []*StatsData{s.Valid, s.Test, s.Train}
 	samples := 0

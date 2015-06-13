@@ -54,7 +54,7 @@ type Plots struct {
 	GridColor  color.RGBA
 	plt        []*Plot
 	current    int
-	font       *Font
+	font       Font
 	width      int
 	height     int
 }
@@ -98,49 +98,49 @@ func (ps *Plots) Select(i int) {
 	ps.Call("update")
 }
 
-var prevxmax = float32(0)
+// convert points to screen coords
+func (ps *Plots) ptx(x int) float32 {
+	return (2 / (xmax - xmin)) * (float32(x) / float32(ps.width))
+}
+
+func (ps *Plots) pty(y int) float32 {
+	return -(2 / (ymax - ymin)) * (float32(y) / float32(ps.height))
+}
+
+// returns height of the current font in model coords
+func (ps *Plots) TextHeight() float32 {
+	return ps.pty(fontHeight)
+}
+
+// returns the width of string in model coords
+func (ps *Plots) TextWidth(s string) float32 {
+	return ps.ptx(ps.font.Size(s))
+}
 
 // Paint method draws the plot.
 func (ps *Plots) Paint(paint *qml.Painter) {
-	var err error
 	gl := GL.API(paint)
 	ps.width, ps.height = ps.Int("width"), ps.Int("height")
-	if ps.font == nil {
-		ps.font, err = ps.loadFont(gl, DefaultFontName, DefaultFontScale)
-		if err != nil {
-			panic(err)
-		}
+	if ps.font == 0 {
+		ps.font = loadFont(gl, DefaultFontName, DefaultFontScale, ps.ptx, ps.pty)
 	}
-	// set screen transform
-	gl.Viewport(0, 0, ps.width, ps.height)
-	gl.MatrixMode(GL.PROJECTION)
-	gl.LoadIdentity()
-	gl.Ortho(-1, 1, -1, 1, -1, 1)
-	gl.MatrixMode(GL.MODELVIEW)
-	gl.LoadIdentity()
-	gl.Translatef(xmin, ymin, 0)
-	gl.Scalef(xmax-xmin, ymax-ymin, 1)
-	// set background colour
+	setView(gl, ps.width, ps.height, xmin, ymin, xmax, ymax)
 	r, g, b, a := col(ps.Background)
 	gl.ClearColor(r, g, b, a)
 	gl.Clear(GL.COLOR_BUFFER_BIT)
-	// refresh the plot data
 	p := ps.plt[ps.current]
 	for _, plt := range p.Plotters {
 		plt.Refresh()
 	}
-	// draw the axes
 	ps.drawAxes(gl, p)
-	// draw the plotters
 	for _, plt := range p.Plotters {
 		plt.Plot(gl, p)
 	}
-	// draw the legend
 	ps.drawLegend(gl, p)
-	// draw the plot title
 	ps.font.DrawText(gl, 0.5-ps.TextWidth(p.Title)/2, 1+ps.TextHeight(), 0, p.Title)
 }
 
+// draw the legend for each plotter
 func (ps *Plots) drawLegend(gl *GL.GL, p *Plot) {
 	var width, height float32
 	for _, plt := range p.Plotters {
@@ -179,6 +179,17 @@ func (p *Plot) rescale(gl *GL.GL) {
 }
 
 // utilities
+func setView(gl *GL.GL, width, height int, xmin, ymin, xmax, ymax float32) {
+	gl.Viewport(0, 0, width, height)
+	gl.MatrixMode(GL.PROJECTION)
+	gl.LoadIdentity()
+	gl.Ortho(-1, 1, -1, 1, -1, 1)
+	gl.MatrixMode(GL.MODELVIEW)
+	gl.LoadIdentity()
+	gl.Translatef(xmin, ymin, 0)
+	gl.Scalef(xmax-xmin, ymax-ymin, 1)
+}
+
 func col(c color.RGBA) (r, g, b, a float32) {
 	return float32(c.R) / 255, float32(c.G) / 255, float32(c.B) / 255, float32(c.A) / 255
 }

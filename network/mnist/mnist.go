@@ -6,6 +6,7 @@ import (
 	"github.com/jnb666/deepthought/data"
 	_ "github.com/jnb666/deepthought/data/mnist"
 	"github.com/jnb666/deepthought/network"
+	"math"
 )
 
 func init() {
@@ -36,8 +37,8 @@ func (l Loader) CreateNetwork(cfg *network.Config, d *data.Dataset) *network.Net
 	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with quadratic cost and sigmoid activation\n",
 		d.NumInputs, hiddenNodes, d.NumOutputs)
 	net := network.New(cfg.BatchSize, d.OutputToClass)
-	net.AddLayer(d.NumInputs, hiddenNodes, network.Linear)
-	net.AddLayer(hiddenNodes, d.NumOutputs, network.Sigmoid)
+	net.AddLayer(dims(d.NumInputs), hiddenNodes, network.Linear)
+	net.AddLayer([]int{hiddenNodes}, d.NumOutputs, network.Sigmoid)
 	net.AddQuadraticOutput(d.NumOutputs, network.Sigmoid)
 	return net
 }
@@ -62,8 +63,16 @@ func (l Loader2) CreateNetwork(cfg *network.Config, d *data.Dataset) *network.Ne
 	fmt.Printf("MNIST DATASET: [%d,%d,%d] layers with cross entropy cost and relu activation\n",
 		d.NumInputs, hiddenNodes, d.NumOutputs)
 	net := network.New(cfg.BatchSize, d.OutputToClass)
-	net.AddLayer(d.NumInputs, hiddenNodes, network.Linear)
-	net.AddLayer(hiddenNodes, d.NumOutputs, network.Relu)
+	net.AddLayer(dims(d.NumInputs), hiddenNodes, network.Linear)
+	net.AddLayer(dims(hiddenNodes), d.NumOutputs, network.Relu)
 	net.AddCrossEntropyOutput(d.NumOutputs)
 	return net
+}
+
+func dims(n int) []int {
+	size := int(math.Sqrt(float64(n)))
+	if size*size == n {
+		return []int{size, size}
+	}
+	return []int{n}
 }

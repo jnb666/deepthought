@@ -173,6 +173,12 @@ func (n *Network) FeedForward(m blas.Matrix) blas.Matrix {
 	return m
 }
 
+// Classify method returns a column vector with classified output
+func (n *Network) Classify(output blas.Matrix) blas.Matrix {
+	n.out2class.Apply(output, n.classes)
+	return n.classes
+}
+
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 // samples parameter is the maximum number of samples to check.
 func (n *Network) GetError(samples int, d *data.Data, hist *vec.Vector, hmax float64) (totalErr, classErr float64) {

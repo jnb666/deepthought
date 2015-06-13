@@ -50,9 +50,6 @@ func (ps *Plots) drawAxes(gl *GL.GL, p *Plot) {
 	if !scalex && len(p.Plotters) > 0 {
 		// force the maximum to match the plot
 		p.Xaxis.max = fmin(p.Xaxis.max, xmax)
-		if p.Xaxis.max != prevxmax {
-			prevxmax = p.Xaxis.max
-		}
 	}
 	setColor(gl, ps.Color)
 	p.Xaxis.paint(gl, ps)
