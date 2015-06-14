@@ -76,15 +76,42 @@ ApplicationWindow {
 			ColumnLayout {	
 				RowLayout {
 					spacing: 20
+					Button { text: "first"; onClicked: net.first() }					
 					Button { text: "<< prev"; onClicked: net.prev() }
 					Label { objectName: "testLabel"}
 					Button { text: "next >>"; onClicked: net.next() }
 				}
-				RowLayout{
+				RowLayout {
 					Network {
 						id: net; objectName: "netControl"
 						width: 800; height: 800
-						background: "#404040"; color: "white"
+						background: "#202020"; color: "white"
+					}
+				}
+				RowLayout {
+					spacing: 20					
+					CheckBox { 
+						text: "compact view"; onClicked: net.compact(checked) 
+					}
+					CheckBox {
+						id: showErrors 
+						text: "only show errors"; onClicked: net.filter(checked, filter.currentIndex-1) 
+					}
+					Label { text: "filter:" }
+					ComboBox { 
+						id: filter
+						model: ListModel {
+							id: filterList
+							objectName: "filterList"
+							function reset() {
+								filter.currentIndex = 0
+								filterList.clear()
+							}
+							function addItem(t) {
+								filterList.append({ text: t })
+							}
+						}
+						onActivated: net.filter(showErrors.checked, index-1)
 					}
 				}
 			}

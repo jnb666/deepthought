@@ -31,6 +31,7 @@ type Ctrl struct {
 	plot      qml.Object
 	runLabel  qml.Object
 	testLabel qml.Object
+	filter    qml.Object
 	setNames  []string
 	plots     []*Plot
 }
@@ -57,7 +58,22 @@ func (c *Ctrl) init(root qml.Object) {
 func (c *Ctrl) initNet(root qml.Object) {
 	c.net = root.ObjectByName("netControl")
 	c.testLabel = root.ObjectByName("testLabel")
+	c.filter = root.ObjectByName("filterList")
+	c.setFilterList()
+	c.net.Call("run", 1)
+}
 
+// set filter combo box list
+func (c *Ctrl) setFilterList() {
+	c.filter.Call("reset")
+	c.filter.Call("addItem", "any")
+	nout := c.testData.Output.Cols()
+	if nout == 1 {
+		nout = 2
+	}
+	for i := 0; i < nout; i++ {
+		c.filter.Call("addItem", fmt.Sprint(i))
+	}
 }
 
 // Get next event from channel, if running is set then auto step
@@ -99,8 +115,8 @@ func (c *Ctrl) Refresh(cfg *network.Config, net *network.Network, testData *netw
 		c.plot.Call("update")
 		c.network = net
 		c.testData = testData
-		c.net.Set("index", 0)
-		c.net.Call("update")
+		c.setFilterList()
+		c.net.Call("first")
 	})
 }
 
@@ -109,6 +125,7 @@ func (c *Ctrl) SetRun(run int) {
 	qml.RunMain(func() {
 		label := fmt.Sprintf("run: %d/%d", run, c.conf.cfg.MaxRuns)
 		c.runLabel.Set("text", label)
+		c.net.Call("first")
 	})
 }
 
@@ -195,6 +212,7 @@ func MainLoop(ctrl *Ctrl) {
 				Init: func(n *Network, obj qml.Object) {
 					n.Object = obj
 					n.ctrl = ctrl
+					n.filter = -1
 				},
 			},
 		})

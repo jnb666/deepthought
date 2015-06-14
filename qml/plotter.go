@@ -249,19 +249,19 @@ func (h *Histogram) Plot(gl *GL.GL, p *Plot) {
 		gl.PushAttrib(GL.ENABLE_BIT)
 		gl.Enable(GL.BLEND)
 		gl.BlendFunc(GL.SRC_ALPHA, GL.ONE_MINUS_SRC_ALPHA)
-		for _, bin := range h.bins {
-			gl.Begin(GL.QUADS)
-			bin.draw(gl)
-			gl.End()
+		for _, b := range h.bins {
+			if b.val > 0 {
+				drawBox(gl, b.min, 0, b.max, b.val, true)
+			}
 		}
 		gl.PopAttrib()
 	}
 	// draw outline
 	setColor(gl, h.Color)
-	for _, bin := range h.bins {
-		gl.Begin(GL.LINE_STRIP)
-		bin.draw(gl)
-		gl.End()
+	for _, b := range h.bins {
+		if b.val > 0 {
+			drawBox(gl, b.min, 0, b.max, b.val, false)
+		}
 	}
 	gl.PopMatrix()
 	gl.PopAttrib()
@@ -286,13 +286,4 @@ func (h *Histogram) Refresh() {
 
 type bin struct {
 	min, max, val float32
-}
-
-func (b bin) draw(gl *GL.GL) {
-	if b.val > 0 {
-		gl.Vertex2f(b.min, 0)
-		gl.Vertex2f(b.min, b.val)
-		gl.Vertex2f(b.max, b.val)
-		gl.Vertex2f(b.max, 0)
-	}
 }

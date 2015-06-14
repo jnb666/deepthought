@@ -206,6 +206,19 @@ func drawLine(gl *GL.GL, x0, y0, x1, y1 float32) {
 	gl.End()
 }
 
+func drawBox(gl *GL.GL, x0, y0, x1, y1 float32, fill bool) {
+	if fill {
+		gl.Begin(GL.QUADS)
+	} else {
+		gl.Begin(GL.LINE_LOOP)
+	}
+	gl.Vertex2f(x0, y0)
+	gl.Vertex2f(x1, y0)
+	gl.Vertex2f(x1, y1)
+	gl.Vertex2f(x0, y1)
+	gl.End()
+}
+
 func fmin(a, b float32) float32 {
 	if a < b {
 		return a
