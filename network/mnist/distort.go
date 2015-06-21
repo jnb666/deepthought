@@ -140,21 +140,23 @@ func (l *Loader) Distort(in, out blas.Matrix, mask int, severity float64) {
 }
 
 func (l *Loader) Release() {
-	l.img.Release()
-	l.xm.Release()
-	l.ym.Release()
-	l.xscale.Release()
-	l.yscale.Release()
-	l.angle.Release()
-	l.cosa.Release()
-	l.sina.Release()
-	l.tx.Release()
-	l.ty.Release()
-	l.txy.Release()
-	l.kernel.Release()
-	l.ux.Release()
-	l.uy.Release()
-	l.dx.Release()
-	l.dy.Release()
+	if l.img != nil {
+		l.img.Release()
+		l.xm.Release()
+		l.ym.Release()
+		l.xscale.Release()
+		l.yscale.Release()
+		l.angle.Release()
+		l.cosa.Release()
+		l.sina.Release()
+		l.tx.Release()
+		l.ty.Release()
+		l.txy.Release()
+		l.kernel.Release()
+		l.ux.Release()
+		l.uy.Release()
+		l.dx.Release()
+		l.dy.Release()
+	}
 	l.img = nil
 }
