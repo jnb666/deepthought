@@ -2,6 +2,7 @@ package network
 
 import (
 	"fmt"
+	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/vec"
 	"math"
 	"time"
@@ -20,6 +21,7 @@ type Stats struct {
 	Runs       int
 	RunSuccess int
 	StartEpoch time.Time
+	EpochTime  time.Duration
 	TotalTime  time.Duration
 	Test       *StatsData
 	Train      *StatsData
@@ -105,7 +107,7 @@ func (s *Stats) EndRun(failed bool) string {
 		s.RunSuccess++
 	}
 	s.Runs++
-	status += fmt.Sprintf("  epochs=%d  run time=%.2fs  reg error=%.4f  class error=%.1f%%",
+	status += fmt.Sprintf("  epochs=%d  run time=%.2fs  reg error=%.4f  class error=%.2f%%",
 		s.Epoch, s.TotalTime.Seconds(), test.Error.Last(), 100*test.ClassError.Last())
 	return status
 }
@@ -122,12 +124,12 @@ func (s *Stats) String() string {
 	if s.Test.Error.Len() > 0 {
 		str += fmt.Sprint("   test ", s.Test)
 	}
-	str += fmt.Sprintf("   time %dms", time.Since(s.StartEpoch).Nanoseconds()/1e6)
+	str += fmt.Sprintf("   time %dms", s.EpochTime.Nanoseconds()/1e6)
 	return str
 }
 
 func (d *StatsData) String() string {
-	return fmt.Sprintf("%.5f %4.1f%%", d.Error.Last(), 100*d.ClassError.Last())
+	return fmt.Sprintf("%.5f %5.2f%%", d.Error.Last(), 100*d.ClassError.Last())
 }
 
 // History method returns historical statistics
@@ -139,7 +141,9 @@ func (s *Stats) History() string {
 
 // Update method calculates the error and updates the stats.
 func (s *Stats) Update(n *Network, d *Dataset) {
-	s.TotalTime += time.Since(s.StartEpoch)
+	blas.Sync()
+	s.EpochTime = time.Since(s.StartEpoch)
+	s.TotalTime += s.EpochTime
 	dset := []*Data{d.Valid, d.Test, d.Train}
 	stats := []*StatsData{s.Valid, s.Test, s.Train}
 	samples := 0

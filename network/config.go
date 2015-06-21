@@ -18,6 +18,7 @@ type Config struct {
 	StopAfter   int     // stop after n epochs with no improvement
 	LogEvery    int     // log stats every n epochs
 	Sampler     string  // sampler to use
+	Distortion  float64 // distortion severity
 }
 
 func (c *Config) Print() {
@@ -45,6 +46,7 @@ func Load(name string, samples int) (cfg *Config, net *Network, d *Dataset, err 
 	if d, err = loader.Load(samples); err != nil {
 		return
 	}
+	d.Load = loader
 	net = loader.CreateNetwork(cfg, d)
 	return
 }

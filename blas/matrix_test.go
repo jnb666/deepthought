@@ -25,6 +25,36 @@ func TestLoad(t *testing.T) {
 	m.Release()
 }
 
+func TestRandom(t *testing.T) {
+	m := New(5, 8)
+	m.SetFormat("%6.3f")
+	for i := 0; i < 5; i++ {
+		m.Random(-10, 10)
+		t.Logf("\n%s\n", m)
+	}
+	m.Release()
+}
+
+func TestImage(t *testing.T) {
+	size := 4
+	img := NewImage(size, size, 1)
+	data := New(1, size*size).Set(0.5)
+	data.SetFormat("%c")
+	t.Logf("data\n%s\n", data)
+	img.Load(data)
+	out := New(1, size*size)
+	row := make([]float64, size)
+	for i := range row {
+		row[i] = float64(i)
+	}
+	xa := New(size, size).Load(RowMajor, row...)
+	ya := New(size, size).Load(ColMajor, row...)
+	img.Approx(xa, ya, out)
+	img2 := New(size, size).Load(RowMajor, out.Data(RowMajor)...)
+	img2.SetFormat("%c")
+	t.Logf("out\n%s\n", img2)
+}
+
 func TestCopy(t *testing.T) {
 	m := New(4, 2).Load(RowMajor, 1, 2, 3, 4, 5, 6, 7, 8)
 	m.SetFormat("%3.0f")

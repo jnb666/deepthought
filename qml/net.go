@@ -3,6 +3,7 @@ package qml
 import (
 	"fmt"
 	"github.com/jnb666/deepthought/blas"
+	"github.com/jnb666/deepthought/network"
 	"gopkg.in/qml.v1"
 	"gopkg.in/qml.v1/gl/2.1"
 	"image/color"
@@ -27,6 +28,7 @@ type Network struct {
 	width      int
 	height     int
 	errorsOnly bool
+	distort    int
 	filter     int
 	perPage    int
 	next       int
@@ -93,20 +95,43 @@ func (n *Network) Compact(on bool) {
 	n.First()
 }
 
+// Apply distortion to the image
+func (n *Network) Distort(on bool, mode int) {
+	n.distort = 0
+	if on {
+		loader := getLoader(n.ctrl.conf.Model)
+		for i, t := range loader.DistortTypes() {
+			if mode == 0 || mode == i+1 {
+				n.distort += t.Mask
+			}
+		}
+	}
+	n.res = []results{}
+	n.next -= n.perPage - 1
+	n.Run(1)
+}
+
 // Run network. Step to next data entry if filter is not matched.
 func (n *Network) Run(offset int) {
+	cfg := n.ctrl.conf.cfg
 	net := n.ctrl.network
+	loader := getLoader(n.ctrl.conf.Model)
 	data := n.ctrl.testData
 	if n.perPage == 0 {
 		n.perPage = 1
 	}
 	got := 0
 	done := false
+	input := blas.New(1, data.Input.Cols())
 	for try := 0; try < data.NumSamples; try++ {
 		n.next = (n.next + data.NumSamples) % data.NumSamples
 		exp := data.Classes.Row(n.next, n.next+1).Data(blas.ColMajor)
 		if n.filter < 0 || int(exp[0]) == n.filter {
-			input := data.Input.Row(n.next, n.next+1)
+			if n.distort > 0 {
+				loader.Distort(data.Input.Row(n.next, n.next+1), input, n.distort, cfg.Distortion)
+			} else {
+				input.Copy(data.Input.Row(n.next, n.next+1), nil)
+			}
 			output := net.FeedForward(input)
 			out := net.Classify(output).Data(blas.ColMajor)
 			if !n.errorsOnly || out[0] != exp[0] {
@@ -127,6 +152,7 @@ func (n *Network) Run(offset int) {
 		}
 	}
 	n.Call("update")
+	input.Release()
 }
 
 func (n *Network) addResult(got int, res results, prepend bool) (int, bool) {
@@ -253,4 +279,12 @@ func dimxy(dims []int) (nx, ny int) {
 		nx = dims[1]
 	}
 	return
+}
+
+func getLoader(model string) network.Loader {
+	loader, ok := network.GetLoader(model)
+	if !ok {
+		panic("could not get loader for " + model)
+	}
+	return loader
 }

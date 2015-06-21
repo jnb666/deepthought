@@ -20,11 +20,15 @@ const (
 	mulATKernel
 	mulBTKernel
 	mulABTKernel
+	loadImageKernel
+	approxKernel
+	filterKernel
+	randomKernel
 	numKernels
 )
 
 var name = []string{"copy", "copyIx", "set", "scale", "add", "cmp", "sum", "sumrows", "maxcol", "norm",
-	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT"}
+	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT", "loadImage", "approx", "filter", "random"}
 
 var srcHead = `
 // Matrix header structure
@@ -230,6 +234,109 @@ var source = []string{
 		}
 	}
 	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+}`,
+	`__kernel void loadImage(__write_only image2d_array_t img, const Dims md, const __global float* m) {
+	ARG
+   	const int width = get_image_width(img);
+	const int nimg = get_global_id(2);
+	int4 ipos = (int4)(col, row, nimg, 0);
+	float4 val = (float4)(m[P(md, nimg, row*width+col)], 0, 0, 0);
+	write_imagef(img, ipos, val);
+}`,
+	`__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
+
+	__kernel void approx(__read_only image2d_array_t img, const Dims xd, const __global float* x,
+			const Dims yd, const __global float* y, const Dims md, __global float* m) {
+ 	ARG
+ 	const int xy = row*get_image_width(img)+col;
+	const int nimg = get_global_id(2);
+	float4 pos;
+	pos.x = col + x[P(xd,nimg,xy)] + .5f;
+	pos.y = row + y[P(yd,nimg,xy)] + .5f;
+	pos.z = nimg;
+	float4 val = read_imagef(img, sampler, pos);
+	m[P(md,nimg,xy)] = val.x;
+}`,
+	`__kernel void filter(const Dims x1d, const __global float* x1, const Dims y1d, const __global float* y1,
+			const Dims x2d, __global float* x2, const Dims y2d, __global float* y2,
+			const Dims kd, const __global float* kern) {
+	ARG
+	const int width = get_global_size(0);
+	const int height = x1d.cols / width;
+ 	const int xy = row*width+col;
+	const int nimg = get_global_id(2);
+	float xconv = 0.f;
+	float yconv = 0.f;
+	for (int y = 0; y < kd.rows; y++) {
+		int yy = row - height/2 + y;
+		for (int x = 0; x < kd.cols; x++) {
+			int xx = col - width/2 + x;
+			if (xx >= 0 && xx < width && yy >= 0 && yy < height) {
+				int pos = P(x1d, nimg, yy*width+xx);
+				xconv += x1[pos] * kern[P(kd,y,x)];
+				yconv += y1[pos] * kern[P(kd,y,x)];
+			}
+		}
+	}
+	x2[P(x2d,nimg,xy)] = xconv;
+	y2[P(y2d,nimg,xy)] = yconv;
+}`,
+	`
+// simple fast random number generator
+// based on http://cas.ee.ic.ac.uk/people/dt10/research/rngs-gpu-mwc64x.html
+#define MWC_A 4294883355U
+#define MWC_M 18446383549859758079UL
+#define MWC_BASEID 4077358422479273989UL
+
+ulong addMod64(ulong a, ulong b) {
+	ulong v = a + b;
+	if ((v >= MWC_M) || (v < a)) v = v-MWC_M;
+	return v;
+}
+
+ulong mulMod64(ulong a, ulong b) {
+	ulong r = 0;
+	while (a != 0) {
+		if (a & 1) r = addMod64(r, b);
+		b = addMod64(b, b);
+		a = a>>1;
+	}
+	return r;
+}
+
+ulong powMod64(ulong a, ulong e) {
+	ulong sqr=a, acc=1;
+	while (e != 0) {
+		if (e & 1) acc = mulMod64(acc, sqr);
+		sqr = mulMod64(sqr, sqr);
+		e = e>>1;
+	}
+	return acc;
+}
+
+float rnd(uint2* state) {
+	uint x=(*state).x, c=(*state).y;
+	uint res = x^c;
+	uint hi = mul_hi(x, MWC_A);
+	x = x*MWC_A + c;
+	c = hi + (x<c);
+	*state = (uint2)(x,c);
+	return res / 4294967296.0;
+}
+
+uint2 seedStreams(ulong stream) {
+	ulong m = powMod64(MWC_A, stream);
+	ulong x = mulMod64(MWC_BASEID, m);
+	return (uint2)((uint)(x / MWC_A), (uint)(x % MWC_A));
+}
+
+__kernel void random(const Dims md, __global float* m, const float rmin, const float range,
+		const int nseed, __global uint2* seeds) {
+	const int id = get_local_id(0);
+	const int pos = get_global_id(0);
+	uint2 state = (nseed == 0) ? seedStreams(id*0x100000000) : seeds[id];
+	m[P(md, pos/md.cols, pos%md.cols)] = rmin + range * rnd(&state);
+	seeds[id] = state;
 }`,
 }
 

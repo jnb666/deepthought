@@ -8,17 +8,19 @@ import (
 )
 
 const (
-	wSize    = 4  // word size
-	dSize    = 16 // dims header size
-	padSize  = 32 // pad matrix to this size
-	trBlock  = 16 // block size for transpose kernel
-	mulBlock = 32 // block size for matrix multiply kernel
-	mulWG    = 16 // work group size for multiply kernel
+	wSize    = 4   // word size
+	dSize    = 16  // dims header size
+	padSize  = 32  // pad matrix to this size
+	trBlock  = 16  // block size for transpose kernel
+	mulBlock = 32  // block size for matrix multiply kernel
+	mulWG    = 16  // work group size for multiply kernel
+	randSize = 256 // no. of concurrent random seeds
 )
 
 var (
-	hw *scl.Hardware
-	sw []*scl.Software
+	hw    *scl.Hardware
+	sw    []*scl.Software
+	seeds *scl.Buffer
 )
 
 // matrix dimensions
@@ -186,6 +188,33 @@ func (m *opencl32) Col(col1, col2 int) Matrix {
 		data:   m.data,
 		format: m.format,
 	}
+}
+
+// Random method initialises a matrix with random values in range 0-1.
+func (m *opencl32) Random(min, max float64) Matrix {
+	var nseed int32
+	if seeds == nil {
+		seeds = scl.NewBuffer(hw, cl.MEM_READ_WRITE, wSize*2*randSize, nil)
+	} else {
+		nseed = randSize
+	}
+	fmin, frange := float32(min), float32(max-min)
+	k := sw[randomKernel]
+	setArgMatrix(k, 0, m)
+	k.SetArg(2, 4, unsafe.Pointer(&fmin))
+	k.SetArg(3, 4, unsafe.Pointer(&frange))
+	k.SetArg(4, 4, unsafe.Pointer(&nseed))
+	k.SetArgBuffer(5, seeds)
+	globalSize := uint64(m.rows * m.cols)
+	localSize := globalSize
+	if localSize > randSize {
+		localSize = randSize
+	}
+	err := k.EnqueueKernel(hw, []uint64{globalSize}, []uint64{localSize}, false)
+	if err != nil {
+		panic(err)
+	}
+	return m
 }
 
 // Copy method returs a copy of the input matrix
@@ -507,6 +536,10 @@ func Sync() {
 // utils
 func pad(n int32) int32 {
 	return padSize * (1 + (n-1)/padSize)
+}
+
+func pad64(n int) uint64 {
+	return uint64(padSize * (1 + (n-1)/padSize))
 }
 
 func globalWG(m *opencl32) []uint64 {

@@ -154,9 +154,10 @@ func train(cfg *network.Config, net *network.Network, data *network.Dataset, s *
 
 	startRun := func() {
 		// start new training run
+		run++
 		net.SetRandomWeights()
 		stopCond = network.StopCriteria(cfg)
-		if run == 0 {
+		if run == 1 {
 			s.Reset()
 		}
 		s.StartRun()
@@ -165,11 +166,12 @@ func train(cfg *network.Config, net *network.Network, data *network.Dataset, s *
 
 	endRun := func(failed bool) {
 		// print stats at end of run
-		run++
-		ctrl.SetRun(run)
 		fmt.Println(s.EndRun(failed))
 		started = false
-		if run >= cfg.MaxRuns {
+		if run < cfg.MaxRuns {
+			startRun()
+			ctrl.SetRun(run)
+		} else {
 			running = false
 			ctrl.Done()
 			fmt.Printf("%s\n\n", s.History())
@@ -187,10 +189,8 @@ func train(cfg *network.Config, net *network.Network, data *network.Dataset, s *
 				endRun(true)
 			}
 			startRun()
+			ctrl.SetRun(run)
 		case "step": // step to next epoch
-			if !started {
-				startRun()
-			}
 			net.Train(s, data, cfg)
 			s.Update(net, data)
 			if done, failed := stopCond(s); done {
@@ -205,17 +205,23 @@ func train(cfg *network.Config, net *network.Network, data *network.Dataset, s *
 				p.clear()
 				s.Reset()
 			}
+		case "stop": // end run
+			endRun(false)
 		case "select": // choose a new data set
 			p.clear()
 			s.Reset()
+			net.Release()
+			data.Release()
 			cfg, net, data, _ = network.Load(ev.Arg, 0)
 			cfg.Print()
 			ctrl.Refresh(cfg, net, testData(data))
 			running = false
 			run = 0
 			startRun()
+			ctrl.SetRun(run)
 		case "quit": // exit the program
 			net.Release()
+			data.Release()
 			blas.Release()
 			ctrl.WG.Done()
 			return

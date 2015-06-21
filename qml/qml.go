@@ -32,6 +32,7 @@ type Ctrl struct {
 	runLabel  qml.Object
 	testLabel qml.Object
 	filter    qml.Object
+	distort   qml.Object
 	setNames  []string
 	plots     []*Plot
 }
@@ -52,19 +53,20 @@ func (c *Ctrl) init(root qml.Object) {
 	c.run = root.ObjectByName("runButton")
 	c.plot = root.ObjectByName("plotControl")
 	c.runLabel = root.ObjectByName("runLabel")
-	c.runLabel.Set("text", fmt.Sprintf("run: 0/%d", c.conf.cfg.MaxRuns))
+	c.runLabel.Set("text", fmt.Sprintf("run: 1/%d", c.conf.cfg.MaxRuns))
 }
 
 func (c *Ctrl) initNet(root qml.Object) {
 	c.net = root.ObjectByName("netControl")
 	c.testLabel = root.ObjectByName("testLabel")
 	c.filter = root.ObjectByName("filterList")
-	c.setFilterList()
+	c.distort = root.ObjectByName("distortList")
+	c.setComboLists()
 	c.net.Call("run", 1)
 }
 
-// set filter combo box list
-func (c *Ctrl) setFilterList() {
+// set filter and distort combo box lists
+func (c *Ctrl) setComboLists() {
 	c.filter.Call("reset")
 	c.filter.Call("addItem", "any")
 	nout := c.testData.Output.Cols()
@@ -73,6 +75,11 @@ func (c *Ctrl) setFilterList() {
 	}
 	for i := 0; i < nout; i++ {
 		c.filter.Call("addItem", fmt.Sprint(i))
+	}
+	c.distort.Call("reset")
+	c.distort.Call("addItem", "all")
+	for _, t := range getLoader(c.conf.Model).DistortTypes() {
+		c.distort.Call("addItem", t.Name)
 	}
 }
 
@@ -115,7 +122,7 @@ func (c *Ctrl) Refresh(cfg *network.Config, net *network.Network, testData *netw
 		c.plot.Call("update")
 		c.network = net
 		c.testData = testData
-		c.setFilterList()
+		c.setComboLists()
 		c.net.Call("first")
 	})
 }
@@ -131,10 +138,11 @@ func (c *Ctrl) SetRun(run int) {
 
 // Config type manages updating the config settings
 type Config struct {
-	Model string
-	cfg   *network.Config
-	opts  []qml.Object
-	keys  []string
+	Model  string
+	cfg    *network.Config
+	opts   []qml.Object
+	keys   []string
+	loader network.Loader
 }
 
 // initialise options struct
@@ -170,11 +178,7 @@ func (c *Config) Update() {
 
 // Set default config settings
 func (c *Config) Default(model string) {
-	if loader, ok := network.GetLoader(model); ok {
-		config.Update(c.cfg, loader.Config())
-	} else {
-		fmt.Println("error loading", model)
-	}
+	config.Update(c.cfg, getLoader(model).Config())
 	c.Update()
 }
 

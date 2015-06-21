@@ -35,6 +35,7 @@ type Matrix interface {
 	Reshape(rows, cols int, shrink bool) Matrix
 	Set(val float64) Matrix
 	Load(Ordering, ...float64) Matrix
+	Random(min, max float64) Matrix
 	Data(Ordering) []float64
 	Col(col1, col2 int) Matrix
 	Row(row1, row2 int) Matrix

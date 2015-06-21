@@ -107,6 +107,7 @@ type Network struct {
 	checkMax     float64
 	checkScale   float64
 	input        blas.Matrix
+	rawInput     blas.Matrix
 	output       blas.Matrix
 	errorHist    blas.Matrix
 }
@@ -135,7 +136,12 @@ func (n *Network) Release() {
 	n.classes.Release()
 	if n.input != nil {
 		n.input.Release()
+	}
+	if n.output != nil {
 		n.output.Release()
+	}
+	if n.rawInput != nil {
+		n.rawInput.Release()
 	}
 }
 
@@ -306,6 +312,7 @@ func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum flo
 // Train method trains the network on the given training set for one epoch.
 func (n *Network) Train(s *Stats, d *Dataset, cfg *Config) {
 	if n.input == nil {
+		n.rawInput = blas.New(n.BatchSize, d.Train.Input.Cols())
 		n.input = blas.New(n.BatchSize, d.Train.Input.Cols())
 		n.output = blas.New(n.BatchSize, d.Train.Output.Cols())
 	}
@@ -314,7 +321,12 @@ func (n *Network) Train(s *Stats, d *Dataset, cfg *Config) {
 	smp := NewSampler(cfg.Sampler).Init(d.Train.NumSamples, n.BatchSize)
 	batch := 0
 	for {
-		smp.Sample(d.Train.Input, n.input)
+		smp.Sample(d.Train.Input, n.rawInput)
+		if cfg.Distortion > 0 {
+			d.Load.Distort(n.rawInput, n.input, -1, cfg.Distortion)
+		} else {
+			n.input = n.rawInput
+		}
 		smp.Sample(d.Train.Output, n.output)
 		n.TrainStep(s.Epoch, batch, d.Train.NumSamples, cfg.LearnRate, cfg.WeightDecay, cfg.Momentum)
 		batch++

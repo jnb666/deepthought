@@ -1,5 +1,9 @@
 package blas
 
+import (
+	"math/rand"
+)
+
 // matrix of float64 stored internally in row major order
 type native64 struct {
 	rows   int
@@ -86,6 +90,16 @@ func (m *native64) Data(order Ordering) []float64 {
 		}
 	}
 	return data
+}
+
+// Random method initialises a matrix with random values in range 0-1.
+func (m *native64) Random(min, max float64) Matrix {
+	for row := 0; row < m.rows; row++ {
+		for col := 0; col < m.cols; col++ {
+			m.set(row, col, float64(min + (max-min)*rand.Float64()))
+		}
+	}
+	return m
 }
 
 // Copy method returns a copy of the input matrix

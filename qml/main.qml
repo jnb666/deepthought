@@ -26,13 +26,13 @@ ApplicationWindow {
 			ColumnLayout {	
 				RowLayout {
 					spacing: 20
-					Button { text: "restart"; onClicked: ctrl.send("start", "") }
+					Button { text: "start"; onClicked: ctrl.send("start", "") }
 					Button { text: "step"; onClicked: ctrl.send("step", "") }
 					Button {
 						objectName: "runButton"; text: "run"; checkable: true
 						onClicked: ctrl.send("run", checked ? "start" : "stop");
 					}
-					Button { text: "stats"; onClicked: ctrl.send("stats", "print") }
+					Button { text: "stop"; onClicked: ctrl.send("stop", "") }
 					Label { text: "data set:" }
 					ComboBox {
 						objectName: "modelList"
@@ -66,6 +66,7 @@ ApplicationWindow {
 						onClicked: plot.select({{ .Index }})
 					}
 					{{ end }}
+					Button { text: "print stats"; onClicked: ctrl.send("stats", "print") }
 					Button { text: "clear stats"; onClicked: ctrl.send("stats", "clear") }
 				}
 			}
@@ -80,6 +81,25 @@ ApplicationWindow {
 					Button { text: "<< prev"; onClicked: net.prev() }
 					Label { objectName: "testLabel"}
 					Button { text: "next >>"; onClicked: net.next() }
+					Button { 
+						id: distort; text: "distort"; checkable: true; 
+						onClicked: net.distort(checked, distortMode.currentIndex) 
+					}
+					ComboBox {
+						id: distortMode
+						model: ListModel {
+							id: distortList
+							objectName: "distortList"
+							function reset() {
+								distortMode.currentIndex = 0
+								distortList.clear()
+							}
+							function addItem(t) {
+								distortList.append({ text: t })
+							}
+						}
+						onActivated: net.distort(distort.checked, index)
+					}					
 				}
 				RowLayout {
 					Network {
@@ -180,7 +200,7 @@ ApplicationWindow {
 					onTextChanged: cfg.set(objectName, text)
 				}
 				Label { 
-					Layout.rowSpan: 7
+					Layout.rowSpan: 8
 				}
 				Label {
 					text: "threshold"
@@ -226,7 +246,16 @@ ApplicationWindow {
 					id: sampler; objectName: "Sampler"
 					model: ["uniform", "random"]
 					onActivated: cfg.set(objectName, model[index])
-				}					
+				}
+				Label {
+					text: "distortion"
+					anchors.right: distortion.left; anchors.rightMargin: 10
+				}									
+				TextField { 
+					id: distortion; objectName: "Distortion"
+					validator: DoubleValidator{}
+					onTextChanged: cfg.set(objectName, text)
+				}
 			}
 		}
 	}

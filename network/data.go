@@ -8,11 +8,20 @@ import (
 
 var register = map[string]Loader{}
 
+// Distortion type is used for a bitmask of supported distortions
+type Distortion struct {
+	Mask int
+	Name string
+}
+
 // Loader interface is used to load a new dataset
 type Loader interface {
 	Load(samples int) (*Dataset, error)
 	Config() *Config
 	CreateNetwork(cfg *Config, d *Dataset) *Network
+	DistortTypes() []Distortion
+	Distort(in, out blas.Matrix, mask int, severity float64)
+	Release()
 }
 
 // Register function is called on initialisation to make a new dataset available.
@@ -28,6 +37,7 @@ func GetLoader(name string) (l Loader, ok bool) {
 
 // Dataset type represents a set of test, training and validation data
 type Dataset struct {
+	Load          Loader
 	OutputToClass blas.UnaryFunction
 	Test          *Data
 	Train         *Data
@@ -60,6 +70,9 @@ func (d *Dataset) Release() {
 	}
 	if d.Valid != nil {
 		d.Valid.Release()
+	}
+	if d.Load != nil {
+		d.Load.Release()
 	}
 }
 

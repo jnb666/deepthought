@@ -64,3 +64,9 @@ func (Loader) Load(samples int) (s *network.Dataset, err error) {
 	}
 	return
 }
+
+func (Loader) DistortTypes() (t []network.Distortion) { return }
+
+func (Loader) Distort(in, out blas.Matrix, mask int, severity float64) {}
+
+func (Loader) Release() {}

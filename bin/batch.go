@@ -49,5 +49,6 @@ func main() {
 	}
 	fmt.Println(s.History())
 	net.Release()
+	data.Release()
 	blas.Release()
 }

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	maxTicks        = 6
+	maxTicks        = 8
 	tickLength      = 0.015
 	tickLabelOffset = 0.02
 	axisLabelOffset = 0.05
