@@ -2,6 +2,7 @@ package mnist
 
 import (
 	"github.com/jnb666/deepthought/blas"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -52,10 +53,11 @@ func TestDistort(t *testing.T) {
 	start := time.Now()
 	for i := 0; i < s.Train.NumSamples/batch; i++ {
 		input = s.Train.Input.Row(i*batch, (i+1)*batch)
-		l.Distort(input, output, mask, 0.1)
+		l.Distort(input, output, mask, 1)
 		if verbose {
-			t.Logf("input \n%s\n", getImage(input, 0))
-			t.Logf("output\n%s\n", getImage(output, 0))
+			ix := rand.Intn(batch)
+			t.Logf("input \n%s\n", getImage(input, ix))
+			t.Logf("output\n%s\n", getImage(output, ix))
 		}
 	}
 	blas.Sync()

@@ -41,7 +41,7 @@ func TestImage(t *testing.T) {
 	data := New(1, size*size).Set(0.5)
 	data.SetFormat("%c")
 	t.Logf("data\n%s\n", data)
-	img.Load(data)
+	img.Import(data)
 	out := New(1, size*size)
 	row := make([]float64, size)
 	for i := range row {
@@ -49,7 +49,7 @@ func TestImage(t *testing.T) {
 	}
 	xa := New(size, size).Load(RowMajor, row...)
 	ya := New(size, size).Load(ColMajor, row...)
-	img.Approx(xa, ya, out)
+	img.Export(xa, ya, out)
 	img2 := New(size, size).Load(RowMajor, out.Data(RowMajor)...)
 	img2.SetFormat("%c")
 	t.Logf("out\n%s\n", img2)

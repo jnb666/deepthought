@@ -22,13 +22,16 @@ const (
 	mulABTKernel
 	loadImageKernel
 	approxKernel
+	scaleImageKernel
+	rotateKernel
 	filterKernel
 	randomKernel
 	numKernels
 )
 
 var name = []string{"copy", "copyIx", "set", "scale", "add", "cmp", "sum", "sumrows", "maxcol", "norm",
-	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT", "loadImage", "approx", "filter", "random"}
+	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT", "loadImage", "approx",
+	"scaleImage", "rotateImage", "filter", "random"}
 
 var srcHead = `
 // Matrix header structure
@@ -256,6 +259,25 @@ var source = []string{
 	pos.z = nimg;
 	float4 val = read_imagef(img, sampler, pos);
 	m[P(md,nimg,xy)] = val.x;
+}`,
+	`__kernel void scaleImage(const float x0, const float y0,
+			const Dims sxd, const __global float* sx, const Dims syd, const __global float* sy,
+			const Dims xd, __global float* x, const Dims yd, __global float* y) {
+	ARG
+ 	const int xy = row*get_global_size(0)+col;
+	const int nimg = get_global_id(2);
+	x[P(xd,nimg,xy)] += (col-x0) * sx[P(sxd,0,nimg)];
+	y[P(yd,nimg,xy)] += (row-y0) * sy[P(syd,0,nimg)];	
+}`,
+	`__kernel void rotateImage(const float x0, const float y0, const Dims ad, const __global float* ang, 
+			const Dims xd, __global float* x, const Dims yd, __global float* y) {
+	ARG
+ 	const int xy = row*get_global_size(0)+col;
+	const int nimg = get_global_id(2);
+	float cosa;
+	float sina = sincos(ang[P(ad,0,nimg)], &cosa);
+	x[P(xd,nimg,xy)] += (cosa-1.f)*(col-x0) - sina*(row-y0);
+	y[P(yd,nimg,xy)] += (cosa-1.f)*(row-y0) + sina*(col-x0);
 }`,
 	`__kernel void filter(const Dims x1d, const __global float* x1, const Dims y1d, const __global float* y1,
 			const Dims x2d, __global float* x2, const Dims y2d, __global float* y2,
