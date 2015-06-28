@@ -25,17 +25,16 @@ func NewBuffer(h *Hardware, mode cl.MemFlags, size int, data interface{}) *Buffe
 
 // Write method writes host data to the device
 func (b *Buffer) Write(h *Hardware) {
+	//fmt.Printf("write %d %x\n", b.Size, b.Ptr)
 	err := cl.EnqueueWriteBuffer(h.Queue, b.Buf, cl.TRUE, 0, b.Size, b.Ptr, 0, nil, nil)
 	checkErr(err)
 }
 
 // Read method reads memory back from device to host
-func (b *Buffer) Read(h *Hardware) cl.ErrorCode {
+func (b *Buffer) Read(h *Hardware) {
+	//fmt.Printf("read %d %x\n", b.Size, b.Ptr)
 	err := cl.EnqueueReadBuffer(h.Queue, b.Buf, cl.TRUE, 0, b.Size, b.Ptr, 0, nil, nil)
-	if err == cl.SUCCESS {
-		err = cl.Finish(h.Queue)
-	}
-	return err
+	checkErr(err)
 }
 
 // Release method frees the buffer memory

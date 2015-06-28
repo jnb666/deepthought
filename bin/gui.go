@@ -29,7 +29,8 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	network.SeedRandom(seed)
+	seed = blas.SeedRandom(seed)
+	fmt.Println("set random seed to", seed)
 	cfg.Print()
 	s := network.NewStats()
 	plts := createPlots(s)
@@ -132,8 +133,8 @@ func (p *statsPlot) find(cfg *network.Config) (ix int, ok bool) {
 // add point to the stats plot
 func (p *statsPlot) addPoint(s *network.Stats, cfg *network.Config) {
 	i, found := p.find(cfg)
-	p.x[i].Push(s.RunTime.Mean, s.RunTime.StdDev)
-	p.y[i].Push(s.ClsError.Mean, s.ClsError.StdDev)
+	p.x[i].Push(float32(s.RunTime.Mean), float32(s.RunTime.StdDev))
+	p.y[i].Push(float32(s.ClsError.Mean), float32(s.ClsError.StdDev))
 	if !found {
 		for i, title := range p.name[:len(p.name)-1] {
 			p.Plotters[i].SetName(title)

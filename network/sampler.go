@@ -71,9 +71,9 @@ func (s *randomSampler) Init(samples, batchSize int) Sampler {
 	s.batch = batchSize
 	s.start = 0
 	s.index = blas.New(samples, 1)
-	data := make([]float64, samples)
+	data := make([]float32, samples)
 	for i, ix := range rand.Perm(samples) {
-		data[i] = float64(ix)
+		data[i] = float32(ix)
 	}
 	s.index.Load(blas.RowMajor, data...)
 	return s

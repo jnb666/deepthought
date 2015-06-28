@@ -8,7 +8,7 @@ import (
 )
 
 // rescale intensity to value
-func rescale(x uint8) float64 { return float64(x) / 255.0 }
+func rescale(x uint8) float32 { return float32(x) / 255.0 }
 
 // Load function loads and returns the iris dataset.
 func (Loader) Load(samples int) (*network.Dataset, error) {
@@ -106,9 +106,9 @@ func (r *imageReader) readBatch(n int) (in, out, class blas.Matrix) {
 	}
 	size := int(r.image.Width) // assume square
 	image := make([]byte, size*size)
-	idata := make([]float64, n*size*size)
-	odata := make([]float64, n*numOutputs)
-	cdata := make([]float64, n)
+	idata := make([]float32, n*size*size)
+	odata := make([]float32, n*numOutputs)
+	cdata := make([]float32, n)
 	for i := 0; i < n; i++ {
 		if _, r.err = r.fimg.Read(image); r.err != nil {
 			return
@@ -122,7 +122,7 @@ func (r *imageReader) readBatch(n int) (in, out, class blas.Matrix) {
 			if int(labels[i]) == j {
 				odata[i*numOutputs+j] = 1
 			}
-			cdata[i] = float64(labels[i])
+			cdata[i] = float32(labels[i])
 		}
 	}
 	in = blas.New(n, size*size).Load(blas.RowMajor, idata...)

@@ -37,10 +37,10 @@ func (ps *Plots) drawAxes(gl *GL.GL, p *Plot) {
 	scalex := false
 	for _, plt := range p.Plotters {
 		min, max := plt.DataRange()
-		xmin = fmin(xmin, min.X)
-		xmax = fmax(xmax, max.X)
-		ymin = fmin(ymin, min.Y)
-		ymax = fmax(ymax, max.Y)
+		xmin = vec.Min(xmin, min.X)
+		xmax = vec.Max(xmax, max.X)
+		ymin = vec.Min(ymin, min.Y)
+		ymax = vec.Max(ymax, max.Y)
 		if !plt.Scaled() {
 			scalex = true
 		}
@@ -49,7 +49,7 @@ func (ps *Plots) drawAxes(gl *GL.GL, p *Plot) {
 	p.Yaxis.rescale(ymin, ymax)
 	if !scalex && len(p.Plotters) > 0 {
 		// force the maximum to match the plot
-		p.Xaxis.max = fmin(p.Xaxis.max, xmax)
+		p.Xaxis.max = vec.Min(p.Xaxis.max, xmax)
 	}
 	setColor(gl, ps.Color)
 	p.Xaxis.paint(gl, ps)
@@ -115,9 +115,8 @@ func (ax *Axis) rescale(min, max float32) {
 	if max-min < epsilon {
 		min, max = 0, 1
 	}
-	axisRange := vec.Nicenum(float64(max-min), false)
-	spacing := vec.Nicenum(axisRange/float64(maxTicks-1), true)
-	ax.spacing = float32(spacing)
-	ax.min = float32(math.Floor(float64(min)/spacing) * spacing)
-	ax.max = float32(math.Ceil(float64(max)/spacing) * spacing)
+	axisRange := vec.Nicenum(max-min, false)
+	ax.spacing = vec.Nicenum(axisRange/float32(maxTicks-1), true)
+	ax.min = float32(math.Floor(float64(min/ax.spacing))) * ax.spacing
+	ax.max = float32(math.Ceil(float64(max/ax.spacing))) * ax.spacing
 }

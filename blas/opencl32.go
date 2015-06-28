@@ -4,24 +4,32 @@ import (
 	"fmt"
 	"github.com/go-gl/cl/v1.2/cl"
 	"github.com/jnb666/deepthought/scl"
+	"sync"
 	"unsafe"
 )
 
 const (
-	wSize    = 4   // word size
-	dSize    = 16  // dims header size
-	padSize  = 32  // pad matrix to this size
-	trBlock  = 16  // block size for transpose kernel
-	mulBlock = 32  // block size for matrix multiply kernel
-	mulWG    = 16  // work group size for multiply kernel
-	randSize = 256 // no. of concurrent random seeds
+	wSize      = 4          // word size
+	dSize      = 16         // dims header size
+	padSize    = 16         // pad matrix to this size
+	trBlock    = 16         // block size for transpose kernel
+	mulBlock   = 16         // block size for matrix multiply kernel
+	randSize   = 256        // no. of concurrent random seeds
+	mwc_A      = 4294883355 // params for random no. generator
+	mwc_M      = 18446383549859758079
+	mwc_BASEID = 4077358422479273989
 )
 
 var (
-	hw    *scl.Hardware
-	sw    []*scl.Software
-	seeds *scl.Buffer
+	hw        *scl.Hardware
+	sw        []*scl.Software
+	seeds     [2]*scl.Buffer
+	seedBuf   []seed
+	seedIx    int
+	randMutex sync.Mutex
 )
+
+type seed struct{ hi, lo uint32 }
 
 // matrix dimensions
 type dims struct {
@@ -45,7 +53,7 @@ func initCL() {
 	hw = scl.Devices().Select(0)
 	fmt.Println("Init OpenCL:", hw)
 	sw = make([]*scl.Software, numKernels)
-	opts := fmt.Sprintf("-D TRBLK=%d -D TS=%d -D WPT=%d", trBlock, mulBlock, mulBlock/mulWG)
+	opts := fmt.Sprintf("-D TRBLK=%d -D TS=%d -D MWC_A=%dU", trBlock, mulBlock, mwc_A)
 	var src string
 	for i := range sw {
 		if i >= mulKernel {
@@ -100,25 +108,22 @@ func (m *opencl32) String() string {
 
 // Load method initialises a matrix with data from a list of float64 values.
 // If the number of values is less than the size then they are repeated to fill the matrix.
-func (m *opencl32) Load(order Ordering, vals ...float64) Matrix {
+func (m *opencl32) Load(order Ordering, vals ...float32) Matrix {
 	var row, col int32
 	if len(vals) == 0 {
 		panic("blas:Load - no data provided")
-	}
-	if err := m.buf.Read(hw); err != cl.SUCCESS {
-		panic(cl.ErrToStr(err))
 	}
 	next := getNext(vals)
 	if order == RowMajor {
 		for row = 0; row < m.rows; row++ {
 			for col = 0; col < m.cols; col++ {
-				m.data[m.base+row*m.stride+col] = float32(next())
+				m.data[m.base+row*m.stride+col] = next()
 			}
 		}
 	} else {
 		for col = 0; col < m.cols; col++ {
 			for row = 0; row < m.rows; row++ {
-				m.data[m.base+row*m.stride+col] = float32(next())
+				m.data[m.base+row*m.stride+col] = next()
 			}
 		}
 	}
@@ -127,24 +132,22 @@ func (m *opencl32) Load(order Ordering, vals ...float64) Matrix {
 }
 
 // Data method returns a copy of the matrix data as a slice
-func (m *opencl32) Data(order Ordering) []float64 {
+func (m *opencl32) Data(order Ordering) []float32 {
 	var row, col int32
-	if err := m.buf.Read(hw); err != cl.SUCCESS {
-		panic(cl.ErrToStr(err))
-	}
-	data := make([]float64, m.rows*m.cols)
+	m.buf.Read(hw)
+	data := make([]float32, m.rows*m.cols)
 	i := 0
 	if order == RowMajor {
 		for row = 0; row < m.rows; row++ {
 			for col = 0; col < m.cols; col++ {
-				data[i] = float64(m.data[m.base+row*m.stride+col])
+				data[i] = m.data[m.base+row*m.stride+col]
 				i++
 			}
 		}
 	} else {
 		for col = 0; col < m.cols; col++ {
 			for row = 0; row < m.rows; row++ {
-				data[i] = float64(m.data[m.base+row*m.stride+col])
+				data[i] = m.data[m.base+row*m.stride+col]
 				i++
 			}
 		}
@@ -190,30 +193,41 @@ func (m *opencl32) Col(col1, col2 int) Matrix {
 	}
 }
 
-// Random method initialises a matrix with random values in range 0-1.
-func (m *opencl32) Random(min, max float64) Matrix {
-	var nseed int32
-	if seeds == nil {
-		seeds = scl.NewBuffer(hw, cl.MEM_READ_WRITE, wSize*2*randSize, nil)
-	} else {
-		nseed = randSize
+// Seed the random number generator seeds
+func initSeeds(base int32) {
+	seedBuf = make([]seed, randSize)
+	for i := range seedBuf {
+		m := powMod64(mwc_A, uint64(base)+uint64(i)<<32, mwc_M)
+		x := mulMod64(mwc_BASEID, m, mwc_M)
+		seedBuf[i].hi = uint32(x / mwc_A)
+		seedBuf[i].lo = uint32(x % mwc_A)
 	}
-	fmin, frange := float32(min), float32(max-min)
+	seeds[0] = scl.NewBuffer(hw, cl.MEM_READ_WRITE, 8*randSize, seedBuf)
+	seeds[0].Write(hw)
+	seeds[1] = scl.NewBuffer(hw, cl.MEM_READ_WRITE, 8*randSize, nil)
+}
+
+// Random method initialises a matrix with random values in range 0-1.
+func (m *opencl32) Random(min, max float32) Matrix {
+	if seeds[0] == nil {
+		panic("random seeds not initialised - call SeedRandom")
+	}
+	randMutex.Lock()
+	defer randMutex.Unlock()
+	rrange := max - min
 	k := sw[randomKernel]
 	setArgMatrix(k, 0, m)
-	k.SetArg(2, 4, unsafe.Pointer(&fmin))
-	k.SetArg(3, 4, unsafe.Pointer(&frange))
-	k.SetArg(4, 4, unsafe.Pointer(&nseed))
-	k.SetArgBuffer(5, seeds)
+	k.SetArg(2, 4, unsafe.Pointer(&min))
+	k.SetArg(3, 4, unsafe.Pointer(&rrange))
+	k.SetArgBuffer(4, seeds[seedIx])
+	k.SetArgBuffer(5, seeds[1-seedIx])
 	globalSize := uint64(m.rows * m.cols)
 	localSize := globalSize
 	if localSize > randSize {
 		localSize = randSize
 	}
-	err := k.EnqueueKernel(hw, []uint64{globalSize}, []uint64{localSize}, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{globalSize}, []uint64{localSize})
+	seedIx = 1 - seedIx
 	return m
 }
 
@@ -234,10 +248,7 @@ func (m *opencl32) Copy(in, ix Matrix) Matrix {
 		setArgMatrix(k, 2, mix)
 		setArgMatrix(k, 4, m)
 	}
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return m
 }
 
@@ -249,70 +260,51 @@ func (m *opencl32) Transpose(in Matrix) Matrix {
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
 	sz := uint64(max(a.rows, a.cols))
-	err := k.EnqueueKernel(hw, []uint64{sz, sz}, []uint64{trBlock, trBlock}, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{sz, sz}, []uint64{trBlock, trBlock})
 	return m
 }
 
 // Set method sets all elements of the matrix to the given value
-func (m *opencl32) Set(val float64) Matrix {
-	value := float32(val)
+func (m *opencl32) Set(val float32) Matrix {
 	k := sw[setKernel]
-	k.SetArg(0, wSize, unsafe.Pointer(&value))
+	k.SetArg(0, wSize, unsafe.Pointer(&val))
 	setArgMatrix(k, 1, m)
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return m
 }
 
 // Scale method muliplies each element of the matrix by a scalar.
-func (m *opencl32) Scale(s float64) Matrix {
-	sc := float32(s)
+func (m *opencl32) Scale(sc float32) Matrix {
 	k := sw[scaleKernel]
 	k.SetArg(0, wSize, unsafe.Pointer(&sc))
 	setArgMatrix(k, 1, m)
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return m
 }
 
 // Add method evaluates a + sc * b and puts the result in m.
-func (m *opencl32) Add(m1, m2 Matrix, s float64) Matrix {
+func (m *opencl32) Add(m1, m2 Matrix, sc float32) Matrix {
 	checkEqualSize("blas:Add", m1, m2, m)
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	sc := float32(s)
 	k := sw[addKernel]
 	k.SetArg(0, wSize, unsafe.Pointer(&sc))
 	setArgMatrix(k, 1, a)
 	setArgMatrix(k, 3, b)
 	setArgMatrix(k, 5, m)
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return m
 }
 
 // Cmp method compares a and b and returns a matrix with 0 where they are equal else 1.
-func (m *opencl32) Cmp(m1, m2 Matrix, epsilon float64) Matrix {
+func (m *opencl32) Cmp(m1, m2 Matrix, eps float32) Matrix {
 	checkEqualSize("blas:Cmp", m1, m2, m)
 	a, b := m1.(*opencl32), m2.(*opencl32)
-	eps := float32(epsilon)
 	k := sw[cmpKernel]
 	k.SetArg(0, wSize, unsafe.Pointer(&eps))
 	setArgMatrix(k, 1, a)
 	setArgMatrix(k, 3, b)
 	setArgMatrix(k, 5, m)
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return m
 }
 
@@ -324,10 +316,7 @@ func (m *opencl32) MulElem(m1, m2 Matrix) Matrix {
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return m
 }
 
@@ -366,19 +355,12 @@ func (m *opencl32) Mul(m1, m2 Matrix, aTrans, bTrans, oTrans bool) Matrix {
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
 	k.SetArg(6, 4, unsafe.Pointer(&trans))
-	// local mem kernel
-	gSize := []uint64{mulWG * uint64(pad(bc)) / mulBlock, mulWG * uint64(pad(ar)) / mulBlock}
-	lSize := []uint64{mulWG, mulWG}
-	//fmt.Printf("global size is %+v local size is %+v\n", gSize, lSize)
-	err := k.EnqueueKernel(hw, gSize, lSize, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(pad(bc)), uint64(pad(ar))}, []uint64{mulBlock, mulBlock})
 	return m
 }
 
 // Sum method calculates the sum of the values in the matrix
-func (m *opencl32) Sum() float64 {
+func (m *opencl32) Sum() float32 {
 	gx := 1 + (int(m.cols)-1)/trBlock
 	gy := 1 + (int(m.rows)-1)/trBlock
 	sums := make([]float32, gx*gy)
@@ -388,20 +370,13 @@ func (m *opencl32) Sum() float64 {
 	setArgMatrix(k, 0, m)
 	k.SetArgBuffer(2, res)
 	gSize := []uint64{trBlock * uint64(gx), trBlock * uint64(gy)}
-	lSize := []uint64{trBlock, trBlock}
-	err := k.EnqueueKernel(hw, gSize, lSize, true)
-	if err != nil {
-		panic(err)
-	}
-	clErr := res.Read(hw)
-	if clErr != cl.SUCCESS {
-		panic(cl.ErrToStr(clErr))
-	}
+	k.EnqueueKernel(hw, gSize, []uint64{trBlock, trBlock})
+	res.Read(hw)
 	sum := float32(0)
 	for _, s := range sums {
 		sum += s
 	}
-	return float64(sum)
+	return sum
 }
 
 // SumRows method returns a column vector with the sum of each row.
@@ -411,10 +386,7 @@ func (m *opencl32) SumRows(in Matrix) Matrix {
 	k := sw[sumRowsKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
-	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil)
 	return m
 }
 
@@ -425,10 +397,7 @@ func (m *opencl32) MaxCol(in Matrix) Matrix {
 	k := sw[maxColKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
-	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil)
 	return m
 }
 
@@ -439,31 +408,24 @@ func (m *opencl32) Norm(in Matrix) Matrix {
 	k := sw[normKernel]
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, m)
-	err := k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(m.rows)}, nil)
 	return m
 }
 
 // Histogram method adds bins the values from the input column vector and adds to the histogram.
-func (m *opencl32) Histogram(in Matrix, bins int, min, max float64) Matrix {
+func (m *opencl32) Histogram(in Matrix, bins int, min, max float32) Matrix {
 	a := in.(*opencl32)
 	ibins := int32(bins)
-	fmin := float32(min)
-	scale := float32(bins) / float32(max-min)
+	scale := float32(bins) / (max - min)
 	m.reshape(ibins, 1, false)
 	k := sw[histKernel]
 	k.SetArg(0, wSize, unsafe.Pointer(&ibins))
-	k.SetArg(1, wSize, unsafe.Pointer(&fmin))
+	k.SetArg(1, wSize, unsafe.Pointer(&min))
 	k.SetArg(2, wSize, unsafe.Pointer(&scale))
 	setArgMatrix(k, 3, a)
 	setArgMatrix(k, 5, m)
 	k.SetArg(7, uint64(wSize*bins), nil)
-	err := k.EnqueueKernel(hw, []uint64{uint64(a.rows)}, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(a.rows)}, nil)
 	return m
 }
 
@@ -489,10 +451,7 @@ func (fn UnaryCL) Apply(in, out Matrix) Matrix {
 	k := fn.Software
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
-	err := k.EnqueueKernel(hw, globalWG(b), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(b), nil)
 	return b
 }
 
@@ -519,10 +478,7 @@ func (fn BinaryCL) Apply(m1, m2, out Matrix) Matrix {
 	setArgMatrix(k, 0, a)
 	setArgMatrix(k, 2, b)
 	setArgMatrix(k, 4, m)
-	err := k.EnqueueKernel(hw, globalWG(m), nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, globalWG(m), nil)
 	return b
 }
 

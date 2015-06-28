@@ -31,7 +31,7 @@ func (Loader) Config() *network.Config {
 		MaxEpoch:  200,
 		LearnRate: 10.0,
 		Threshold: 0.1,
-		LogEvery:  5,
+		LogEvery:  1,
 		Sampler:   "uniform",
 	}
 }
@@ -82,6 +82,8 @@ func (Loader) Load(samples int) (s *network.Dataset, err error) {
 
 func (Loader) DistortTypes() (t []network.Distortion) { return }
 
-func (Loader) Distort(in, out blas.Matrix, mask int, severity float64) {}
+func (Loader) Distort(in, out blas.Matrix, mask int, severity float32) {}
 
 func (Loader) Release() {}
+
+func (Loader) Debug(on bool) {}

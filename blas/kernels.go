@@ -24,14 +24,13 @@ const (
 	approxKernel
 	scaleImageKernel
 	rotateKernel
-	filterKernel
 	randomKernel
 	numKernels
 )
 
 var name = []string{"copy", "copyIx", "set", "scale", "add", "cmp", "sum", "sumrows", "maxcol", "norm",
 	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT", "loadImage", "approx",
-	"scaleImage", "rotateImage", "filter", "random"}
+	"scaleImage", "rotateImage", "random"}
 
 var srcHead = `
 // Matrix header structure
@@ -45,19 +44,32 @@ typedef struct {
 `
 
 var mulHead = `
-#define RTS (TS/WPT)
-
 #define MHEAD \
-	__local float asub[TS][TS+1]; __local float bsub[TS][TS+1];\
+	__local float asub[TS][TS+2]; __local float bsub[TS][TS+2];\
 	const int tx = get_local_id(0);	const int ty = get_local_id(1);\
 	const int gx = TS*get_group_id(0); const int gy = TS*get_group_id(1);\
-	float asum[WPT*WPT] = {};
+	float sum = 0.f;
 
-#define MDO(code) for (int wy=0; wy<WPT; wy++) for (int wx=0; wx<WPT; wx++) { code; }
+#define MULBLK(s, a, b, x, y) do { \
+	s += a[y][0] * b[x][0];		\
+	s += a[y][1] * b[x][1];		\
+	s += a[y][2] * b[x][2];		\
+	s += a[y][3] * b[x][3];		\
+	s += a[y][4] * b[x][4];		\
+	s += a[y][5] * b[x][5];		\
+	s += a[y][6] * b[x][6];		\
+	s += a[y][7] * b[x][7];		\
+	s += a[y][8] * b[x][8];		\
+	s += a[y][9] * b[x][9];		\
+	s += a[y][10] * b[x][10];	\
+	s += a[y][11] * b[x][11];	\
+	s += a[y][12] * b[x][12];	\
+	s += a[y][13] * b[x][13];	\
+	s += a[y][14] * b[x][14];	\
+	s += a[y][15] * b[x][15];	\
+} while (0)
 
-#define MPOS int c=(RTS*RTS*w+ty*RTS+tx)%TS; int r=(RTS*RTS*w+ty*RTS+tx)/TS;
-
-#define OPOS int2 pos = oTrans ? (int2)(gx+tx+wx*RTS, gy+ty+wy*RTS) : (int2)(gy+ty+wy*RTS, gx+tx+wx*RTS);
+#define OPOS int2 pos = oTrans ? (int2)(gx+tx, gy+ty) : (int2)(gy+ty, gx+tx);
 `
 
 var unarySrc = `
@@ -70,6 +82,26 @@ __kernel void binary(const Dims ad, const __global float* a, const Dims bd, cons
 		const Dims md, __global float* m) {
 	ARG float x = a[P(ad,row,col)]; float y = b[P(bd,row,col)];
 `
+
+var filterHead = `
+	__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+
+	__kernel void filter(__read_only image2d_array_t img, const Dims kd, const __global float* kern,
+			const Dims od, __global float* out) {
+	ARG
+	float4 pos;
+	pos.z = get_global_id(2);
+	float conv = 0.f;
+	for (int y = 0; y < FILTER_SIZE; y++) {
+		pos.x = (float)col - FILTER_CENTER;
+		pos.y = (float)(row+y) - FILTER_CENTER;
+`
+var filterLoop = "		conv += read_imagef(img, sampler, pos).x*kern[FILTER_STRIDE*y+%d]; pos.x += 1.f;\n"
+
+var filterTail = `	}
+	out[P(od, get_global_id(2), row*get_global_size(0)+col)] = conv;
+}`
+
 var source = []string{
 	`__kernel void copy(const Dims ad, const __global float* a, const Dims md, __global float* m) {
 	ARG m[P(md,row,col)] = a[P(ad,row,col)];
@@ -95,15 +127,21 @@ var source = []string{
 }`,
 	`__kernel void sum(const Dims md, const __global float* m, __global float* res) {
 	ARG
-	const int tpos = get_local_id(1)*TRBLK + get_local_id(0);
-	__local float buffer[TRBLK*TRBLK];
-	buffer[tpos] = m[P(md, row, col)];
+	const int ty = get_local_id(1); 
+	const int tx = get_local_id(0);
+	__local float buffer[TRBLK][TRBLK];
+	buffer[ty][tx] = (row < md.rows && col < md.cols) ? m[P(md, row, col)] : 0.f;
 	barrier(CLK_LOCAL_MEM_FENCE);
-	if (tpos != 0) return;
-	float sum = 0.f;
-	for (int i = 0; i < TRBLK*TRBLK; i++) sum += buffer[i];
-	int ix = get_group_id(1)*get_num_groups(0) + get_group_id(0);
-	res[ix] = sum;
+	if (tx == 0 && ty == 0) {
+		float sum = 0.f;
+		for (int y = 0; y < get_local_size(1); y++) {
+			for (int x = 0; x < get_local_size(0); x++) {
+				sum += buffer[y][x];
+			}
+		}
+		int ix = get_group_id(1)*get_num_groups(0) + get_group_id(0);
+		res[ix] = sum;
+	}
 }`,
 	`__kernel void sumrows(const Dims ad, const __global float* a, const Dims md, __global float* m) {
 	const int row = get_global_id(0);
@@ -173,70 +211,58 @@ var source = []string{
 	`__kernel void mul(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
 		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = ad.stride;
+	const int maxt = ad.stride;
+	const int abase = ad.base + ad.stride*(gy+ty) + tx;
+	const int bbase = bd.base + bd.stride*tx + gx + ty;
 	for (int t = 0; t < maxt; t += TS) {
-		for (int w = 0; w < WPT*WPT; w++) {
-			MPOS
-			asub[r][c] = a[P(ad, gy+r, t+c)];
-			bsub[r][c] = b[P(bd, t+c, gx+r)];
-		}
+		asub[ty][tx] = a[abase + t];
+		bsub[ty][tx] = b[bbase + bd.stride*t];
 		barrier(CLK_LOCAL_MEM_FENCE);
-		for (int k = 0; k < TS; k++) {
-			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
-		}
+		MULBLK(sum, asub, bsub, tx, ty);
 	}
-	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+	OPOS; m[P(md, pos.x, pos.y)] = sum;
 }`,
 	`__kernel void mulAT(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
 		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = (1 + (ad.rows-1)/TS) * TS;
+	const int maxt = (1 + (ad.rows-1)/TS) * TS;
+	const int abase = ad.base + ad.stride*tx + gy + ty;
+	const int bbase = bd.base + bd.stride*tx + gx + ty;
 	for (int t = 0; t < maxt; t += TS) {
-		for (int w = 0; w < WPT*WPT; w++) {
-			MPOS
-			asub[r][c] = a[P(ad, t+c, gy+r)];
-			bsub[r][c] = b[P(bd, t+c, gx+r)];
-		}
+		asub[ty][tx] = a[abase + ad.stride*t];
+		bsub[ty][tx] = b[bbase + bd.stride*t];
 		barrier(CLK_LOCAL_MEM_FENCE);
-		for (int k = 0; k < TS; k++) {
-			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
-		}
+		MULBLK(sum, asub, bsub, tx, ty);
 	}
-	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+	OPOS; m[P(md, pos.x, pos.y)] = sum;
 }`,
 	`__kernel void mulBT(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
 		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = ad.stride;
+	const int maxt = ad.stride;
+	const int abase = ad.base + ad.stride*(gy+ty) + tx;
+	const int bbase = bd.base + bd.stride*(gx+ty) + tx;
 	for (int t = 0; t < maxt; t += TS) {
-		for (int w = 0; w < WPT*WPT; w++) {
-			MPOS
-			asub[r][c] = a[P(ad, gy+r, t+c)];
-			bsub[r][c] = b[P(bd, gx+r, t+c)];
-		}
+		asub[ty][tx] = a[abase + t];
+		bsub[ty][tx] = b[bbase + t];
 		barrier(CLK_LOCAL_MEM_FENCE);
-		for (int k = 0; k < TS; k++) {
-			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
-		}
+		MULBLK(sum, asub, bsub, tx, ty);
 	}
-	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+	OPOS; m[P(md, pos.x, pos.y)] = sum;
 }`,
 	`__kernel void mulABT(const Dims ad, const __global float* a, const Dims bd, const __global float* b,
 		const Dims md, __global float* m, int oTrans) {
 	MHEAD
-	int maxt = bd.stride;
+	const int maxt = bd.stride;
+	const int abase = ad.base + ad.stride*tx + gy + ty;
+	const int bbase = bd.base + bd.stride*(gx+ty) + tx;
 	for (int t = 0; t < maxt; t += TS) {
-		for (int w = 0; w < WPT*WPT; w++) {
-			MPOS
-			asub[r][c] = a[P(ad, t+c, gy+r)];
-			bsub[r][c] = b[P(bd, gx+r, t+c)];
-		}
+		asub[ty][tx] = a[abase + ad.stride*t];
+		bsub[ty][tx] = b[bbase + t];
 		barrier(CLK_LOCAL_MEM_FENCE);
-		for (int k = 0; k < TS; k++) {
-			MDO(asum[wy*WPT+wx] += asub[ty+wy*RTS][k] * bsub[tx+wx*RTS][k])
-		}
+		MULBLK(sum, asub, bsub, tx, ty);
 	}
-	MDO(OPOS; m[P(md, pos.x, pos.y)] = asum[wy*WPT+wx];)
+	OPOS; m[P(md, pos.x, pos.y)] = sum;
 }`,
 	`__kernel void loadImage(__write_only image2d_array_t img, const Dims md, const __global float* m) {
 	ARG
@@ -279,63 +305,9 @@ var source = []string{
 	x[P(xd,nimg,xy)] += (cosa-1.f)*(col-x0) - sina*(row-y0);
 	y[P(yd,nimg,xy)] += (cosa-1.f)*(row-y0) + sina*(col-x0);
 }`,
-	`__kernel void filter(const Dims x1d, const __global float* x1, const Dims y1d, const __global float* y1,
-			const Dims x2d, __global float* x2, const Dims y2d, __global float* y2,
-			const Dims kd, const __global float* kern) {
-	ARG
-	const int width = get_global_size(0);
-	const int height = x1d.cols / width;
- 	const int xy = row*width+col;
-	const int nimg = get_global_id(2);
-	float xconv = 0.f;
-	float yconv = 0.f;
-	for (int y = 0; y < kd.rows; y++) {
-		int yy = row - height/2 + y;
-		for (int x = 0; x < kd.cols; x++) {
-			int xx = col - width/2 + x;
-			if (xx >= 0 && xx < width && yy >= 0 && yy < height) {
-				int pos = P(x1d, nimg, yy*width+xx);
-				xconv += x1[pos] * kern[P(kd,y,x)];
-				yconv += y1[pos] * kern[P(kd,y,x)];
-			}
-		}
-	}
-	x2[P(x2d,nimg,xy)] = xconv;
-	y2[P(y2d,nimg,xy)] = yconv;
-}`,
 	`
 // simple fast random number generator
 // based on http://cas.ee.ic.ac.uk/people/dt10/research/rngs-gpu-mwc64x.html
-#define MWC_A 4294883355U
-#define MWC_M 18446383549859758079UL
-#define MWC_BASEID 4077358422479273989UL
-
-ulong addMod64(ulong a, ulong b) {
-	ulong v = a + b;
-	if ((v >= MWC_M) || (v < a)) v = v-MWC_M;
-	return v;
-}
-
-ulong mulMod64(ulong a, ulong b) {
-	ulong r = 0;
-	while (a != 0) {
-		if (a & 1) r = addMod64(r, b);
-		b = addMod64(b, b);
-		a = a>>1;
-	}
-	return r;
-}
-
-ulong powMod64(ulong a, ulong e) {
-	ulong sqr=a, acc=1;
-	while (e != 0) {
-		if (e & 1) acc = mulMod64(acc, sqr);
-		sqr = mulMod64(sqr, sqr);
-		e = e>>1;
-	}
-	return acc;
-}
-
 float rnd(uint2* state) {
 	uint x=(*state).x, c=(*state).y;
 	uint res = x^c;
@@ -346,19 +318,14 @@ float rnd(uint2* state) {
 	return res / 4294967296.0;
 }
 
-uint2 seedStreams(ulong stream) {
-	ulong m = powMod64(MWC_A, stream);
-	ulong x = mulMod64(MWC_BASEID, m);
-	return (uint2)((uint)(x / MWC_A), (uint)(x % MWC_A));
-}
-
-__kernel void random(const Dims md, __global float* m, const float rmin, const float range,
-		const int nseed, __global uint2* seeds) {
+__kernel void random(const Dims md, __global float* m, const float rmin, const float range, 
+		const __global uint2* seedsIn, __global uint2* seedsOut) {
 	const int id = get_local_id(0);
 	const int pos = get_global_id(0);
-	uint2 state = (nseed == 0) ? seedStreams(id*0x100000000) : seeds[id];
+	const ulong stream = id*0x100000000;
+	uint2 state = seedsIn[id];
 	m[P(md, pos/md.cols, pos%md.cols)] = rmin + range * rnd(&state);
-	seeds[id] = state;
+	seedsOut[id] = state;
 }`,
 }
 

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const epsilon = 1e-4
+const epsilon = 0.01
 
 // Standard activation functions
 var (
@@ -49,24 +49,27 @@ func Init(imp blas.Impl) {
 		}
 	} else {
 		Sigmoid = Activation{
-			Func: blas.Unary64(sigmoid),
-			Deriv: blas.Unary64(func(x float64) float64 {
+			Func: blas.Unary32(sigmoid),
+			Deriv: blas.Unary32(func(x float32) float32 {
 				y := sigmoid(x)
 				return y * (1 - y)
 			}),
 		}
 		Tanh = Activation{
-			Func: blas.Unary64(math.Tanh),
-			Deriv: blas.Unary64(func(x float64) float64 {
-				y := math.Tanh(x)
+			Func: blas.Unary32(tanh),
+			Deriv: blas.Unary32(func(x float32) float32 {
+				y := tanh(x)
 				return 1 - y*y
 			}),
 		}
 		Relu = Activation{
-			Func: blas.Unary64(func(x float64) float64 {
-				return math.Max(x, 0)
+			Func: blas.Unary32(func(x float32) float32 {
+				if x >= 0 {
+					return x
+				}
+				return 0
 			}),
-			Deriv: blas.Unary64(func(x float64) float64 {
+			Deriv: blas.Unary32(func(x float32) float32 {
 				if x >= 0 {
 					return 1
 				}
@@ -74,13 +77,19 @@ func Init(imp blas.Impl) {
 			}),
 		}
 		Softmax = Activation{
-			Func: softmax{fn: blas.Unary64(math.Exp)},
+			Func: softmax{fn: blas.Unary32(func(x float32) float32 {
+				return float32(math.Exp(float64(x)))
+			})},
 		}
 	}
 }
 
-func sigmoid(x float64) float64 {
-	return 1 / (1 + math.Exp(-x))
+func sigmoid(x float32) float32 {
+	return float32(1 / (1 + math.Exp(-float64(x))))
+}
+
+func tanh(x float32) float32 {
+	return float32(math.Tanh(float64(x)))
 }
 
 type linear struct{}
@@ -104,8 +113,8 @@ type Network struct {
 	out2class    blas.UnaryFunction
 	checkEvery   int
 	checkSamples int
-	checkMax     float64
-	checkScale   float64
+	checkMax     float32
+	checkScale   float32
 	input        blas.Matrix
 	rawInput     blas.Matrix
 	output       blas.Matrix
@@ -154,16 +163,16 @@ func (n *Network) String() string {
 	return strings.Join(str, "\n")
 }
 
-// SetRandomWeights method initalises the weights to random values.
+// SetRandomWeights method initalises the weights to random values and sets the gradients to zero.
 // Uses a normal distribution with mean zero and std dev 1/sqrt(num_inputs) for the weights.
 // Bias weights are left at zero.
 func (n *Network) SetRandomWeights() {
 	for _, layer := range n.Nodes[:n.Layers-1] {
 		w := layer.Weights()
 		nin, nout := w.Cols()-1, w.Rows()
-		data := make([]float64, (nin+1)*nout)
+		data := make([]float32, (nin+1)*nout)
 		for i := range data[:nin*nout] {
-			data[i] = rand.NormFloat64() / math.Sqrt(float64(nin))
+			data[i] = float32(rand.NormFloat64() / math.Sqrt(float64(nin)))
 		}
 		w.Load(blas.ColMajor, data...)
 		layer.Gradient().Set(0)
@@ -186,7 +195,7 @@ func (n *Network) Classify(output blas.Matrix) blas.Matrix {
 
 // GetError method calculates the error and classification error given a set of inputs and target outputs.
 // samples parameter is the maximum number of samples to check.
-func (n *Network) GetError(samples int, d *Data, hist *vec.Vector, hmax float64) (totalErr, classErr float64) {
+func (n *Network) GetError(samples int, d *Data, hist *vec.Vector, hmax float32) (totalErr, classErr float32) {
 	totalError := new(vec.RunningStat)
 	classError := new(vec.RunningStat)
 	cols := d.Output.Cols()
@@ -201,11 +210,11 @@ func (n *Network) GetError(samples int, d *Data, hist *vec.Vector, hmax float64)
 		cost := n.Nodes[n.Layers-1].Cost(d.Output.Row(ix, ix+rows))
 		n.errorHist.Histogram(cost, histBins, histMin, hmax)
 		// average error over dataset
-		totalError.Push(cost.Sum() / float64(rows*cols))
+		totalError.Push(cost.Sum() / float32(rows*cols))
 		// get classification error
 		n.out2class.Apply(output, n.classes)
 		n.classes.Cmp(n.classes, d.Classes.Row(ix, ix+rows), epsilon)
-		classError.Push(n.classes.Sum() / float64(rows))
+		classError.Push(n.classes.Sum() / float32(rows))
 		if n.Verbose {
 			fmt.Printf("\rtest batch: %d/%d        ", ix+rows, samples)
 		}
@@ -214,13 +223,13 @@ func (n *Network) GetError(samples int, d *Data, hist *vec.Vector, hmax float64)
 		fmt.Print("\r")
 	}
 	hist.Set(0, hmax/histBins, n.errorHist.Data(blas.ColMajor))
-	return totalError.Mean, classError.Mean
+	return float32(totalError.Mean), float32(classError.Mean)
 }
 
 // CheckGradient method enables gradient check every nepochs runs with max error of maxError.
 // if samples is > 0 then limit to this number of samples per layer.
 // scale fudge factor shouldn't be needed!
-func (n *Network) CheckGradient(nepochs int, maxError float64, samples int, scale float64) {
+func (n *Network) CheckGradient(nepochs int, maxError float32, samples int, scale float32) {
 	n.checkEvery = nepochs
 	n.checkMax = maxError
 	n.checkSamples = samples
@@ -229,42 +238,41 @@ func (n *Network) CheckGradient(nepochs int, maxError float64, samples int, scal
 
 func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 	output := n.Nodes[n.Layers-1]
-	rows := float64(input.Rows())
+	rows := float32(input.Rows())
 	ok = true
 	for nlayer, layer := range n.Nodes[:n.Layers-1] {
-		w := layer.Weights()
-		weight := w.Data(blas.RowMajor)
-		gradData := layer.Gradient().Data(blas.RowMajor)
-		nweight := len(weight)
+		weight := layer.Weights()
+		weightData := weight.Data(blas.RowMajor)
+		gradient := layer.Gradient()
+		gradData := gradient.Data(blas.RowMajor)
+		nweight := len(weightData)
 		samples := n.checkSamples
 		if samples == 0 || nweight < samples {
 			samples = nweight
 		}
-		grads := make([]float64, samples)
-		diffs := make([]float64, samples)
-		projs := make([]float64, samples)
-		maxDiff := 0.0
+		grads := make([]float32, samples)
+		diffs := make([]float32, samples)
+		projs := make([]float32, samples)
+		maxDiff := float32(0)
 		for i, ix := range rand.Perm(nweight)[:samples] {
 			fmt.Printf("\rcheck %d/%d        ", i+1, samples)
-			val := weight[ix]
-			weight[ix] = val - epsilon
-			w.Load(blas.RowMajor, weight...)
+			val := weightData[ix]
+			weightData[ix] = val - epsilon
+			weight.Load(blas.RowMajor, weightData...)
 			n.FeedForward(input)
 			cost1 := output.Cost(target).Sum() * n.checkScale / rows
-			weight[ix] = val + epsilon
-			w.Load(blas.RowMajor, weight...)
+			weightData[ix] = val + epsilon
+			weight.Load(blas.RowMajor, weightData...)
 			n.FeedForward(input)
 			cost2 := output.Cost(target).Sum() * n.checkScale / rows
 			grads[i] = gradData[ix]
 			projs[i] = (cost1 - cost2) / (2 * epsilon)
-			divisor := math.Abs(grads[i]) + math.Abs(projs[i])
-			if divisor > epsilon {
-				diffs[i] = math.Abs(grads[i]-projs[i]) / divisor
-			}
-			maxDiff = math.Max(maxDiff, diffs[i])
-			weight[ix] = val
+			diffs[i] = vec.Abs(grads[i] - projs[i])
+			maxDiff = vec.Max(maxDiff, diffs[i])
+			weightData[ix] = val
 		}
-		w.Load(blas.RowMajor, weight...)
+		weight.Load(blas.RowMajor, weightData...)
+		gradient.Load(blas.RowMajor, gradData...)
 		fmt.Printf("\rLAYER %d : max diff=%.3g epsilon=%g\n", nlayer, maxDiff, epsilon)
 		if maxDiff > n.checkMax {
 			grad := blas.New(1, samples).Load(blas.RowMajor, grads...)
@@ -284,11 +292,11 @@ func (n *Network) doCheck(input, target blas.Matrix) (ok bool) {
 }
 
 // Train step method performs one training step. eta is the learning rate, lambda is the weight decay.
-func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum float64) {
+func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum float32) {
 	n.FeedForward(n.input)
 	// back propagate error and scale gradient
 	delta := n.Nodes[n.Layers-1].BackProp(n.output, momentum)
-	batchSize := float64(n.input.Rows())
+	batchSize := float32(n.input.Rows())
 	for i := n.Layers - 2; i >= 0; i-- {
 		layer := n.Nodes[i]
 		delta = layer.BackProp(delta, momentum)
@@ -299,7 +307,7 @@ func (n *Network) TrainStep(epoch, batch, samples int, eta, lambda, momentum flo
 		n.doCheck(n.input, n.output)
 	}
 	// update weights
-	weightScale := 1 - eta*lambda/float64(samples)
+	weightScale := 1 - eta*lambda/float32(samples)
 	for _, layer := range n.Nodes[:n.Layers-1] {
 		w := layer.Weights()
 		if lambda != 0 {
@@ -323,6 +331,7 @@ func (n *Network) Train(s *Stats, d *Dataset, cfg *Config) {
 	for {
 		smp.Sample(d.Train.Input, n.rawInput)
 		if cfg.Distortion > 0 {
+			//d.Load.Debug(batch == 0)
 			d.Load.Distort(n.rawInput, n.input, -1, cfg.Distortion)
 		} else {
 			n.input = n.rawInput
@@ -338,14 +347,4 @@ func (n *Network) Train(s *Stats, d *Dataset, cfg *Config) {
 		}
 	}
 	smp.Release()
-}
-
-// SeedRandom function sets the random seed, or seeds using time if input is zero. Returns the seed which was used.
-func SeedRandom(seed int64) int64 {
-	if seed == 0 {
-		seed = time.Now().UTC().UnixNano()
-	}
-	fmt.Println("set random seed to", seed)
-	rand.Seed(seed)
-	return seed
 }

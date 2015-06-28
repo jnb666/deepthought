@@ -1,8 +1,10 @@
 // Package blas contains linear algebra routines for matrix manipulation with optional OpenCL acceleration.
 package blas
 
-//go:generate gentype -struct native32 -type float32 native.tmpl native32.go
-//go:generate gentype -struct native64 -type float64 native.tmpl native64.go
+import (
+	"math/rand"
+	"time"
+)
 
 var implementation Impl
 
@@ -12,7 +14,6 @@ type Impl int
 const (
 	none Impl = iota
 	Native32
-	Native64
 	OpenCL32
 )
 
@@ -33,22 +34,22 @@ type Matrix interface {
 	Copy(m, ix Matrix) Matrix
 	Transpose(m Matrix) Matrix
 	Reshape(rows, cols int, shrink bool) Matrix
-	Set(val float64) Matrix
-	Load(Ordering, ...float64) Matrix
-	Random(min, max float64) Matrix
-	Data(Ordering) []float64
+	Set(val float32) Matrix
+	Load(Ordering, ...float32) Matrix
+	Random(min, max float32) Matrix
+	Data(Ordering) []float32
 	Col(col1, col2 int) Matrix
 	Row(row1, row2 int) Matrix
-	Scale(s float64) Matrix
-	Add(a, b Matrix, sc float64) Matrix
-	Cmp(a, b Matrix, epsilon float64) Matrix
+	Scale(s float32) Matrix
+	Add(a, b Matrix, sc float32) Matrix
+	Cmp(a, b Matrix, epsilon float32) Matrix
 	Mul(a, b Matrix, aTrans, bTrans, oTrans bool) Matrix
 	MulElem(a, b Matrix) Matrix
-	Sum() float64
+	Sum() float32
 	SumRows(a Matrix) Matrix
 	MaxCol(m Matrix) Matrix
 	Norm(m Matrix) Matrix
-	Histogram(m Matrix, bins int, min, max float64) Matrix
+	Histogram(m Matrix, bins int, min, max float32) Matrix
 	SetFormat(string)
 	String() string
 }
@@ -61,6 +62,18 @@ func Init(imp Impl) {
 	}
 }
 
+// SeedRandom function sets the random seed, or seeds using time if input is zero. Returns the seed which was used.
+func SeedRandom(seed int64) int64 {
+	if seed == 0 {
+		seed = time.Now().UTC().UnixNano()
+	}
+	rand.Seed(seed)
+	if implementation == OpenCL32 {
+		initSeeds(rand.Int31())
+	}
+	return seed
+}
+
 // Implementation function returns the current implementation
 func Implementation() Impl {
 	return implementation
@@ -71,8 +84,6 @@ func New(rows, cols int) (m Matrix) {
 	switch implementation {
 	case Native32:
 		m = newnative32(rows, cols)
-	case Native64:
-		m = newnative64(rows, cols)
 	case OpenCL32:
 		m = newopencl32(rows, cols)
 	default:
@@ -93,15 +104,13 @@ type UnaryFunction interface {
 	Apply(in, out Matrix) Matrix
 }
 
-// Unary64 represents a float64 function of one variable
-type Unary64 func(float64) float64
+// Unary32 represents a float32 function of one variable
+type Unary32 func(float32) float32
 
 // Apply method applies a function to each element in a matrix
-func (fn Unary64) Apply(in, out Matrix) Matrix {
+func (fn Unary32) Apply(in, out Matrix) Matrix {
 	switch m := out.(type) {
 	case *native32:
-		m.apply(in, fn)
-	case *native64:
 		m.apply(in, fn)
 	default:
 		panic("invalid type for apply")
@@ -114,15 +123,13 @@ type BinaryFunction interface {
 	Apply(a, b, out Matrix) Matrix
 }
 
-// Binary64 represents a float64 function of two variables
-type Binary64 func(a, b float64) float64
+// Binary32 represents a float32 function of two variables
+type Binary32 func(a, b float32) float32
 
 // Apply method applies a function to each element in a matrix
-func (fn Binary64) Apply(m1, m2, out Matrix) Matrix {
+func (fn Binary32) Apply(m1, m2, out Matrix) Matrix {
 	switch m := out.(type) {
 	case *native32:
-		m.apply2(m1, m2, fn)
-	case *native64:
 		m.apply2(m1, m2, fn)
 	default:
 		panic("invalid type for apply")

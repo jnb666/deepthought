@@ -1,7 +1,9 @@
 package blas
 
 import (
+	"fmt"
 	"github.com/go-gl/cl/v1.2/cl"
+	"github.com/jnb666/deepthought/scl"
 	"math"
 	"unsafe"
 )
@@ -10,8 +12,7 @@ import (
 type Image interface {
 	Import(in Matrix)
 	Export(xv, yv, out Matrix)
-	SetOrigin(x0, y0 float64) Image
-	Filter(kernel, xv, yv, dx, dy Matrix)
+	SetOrigin(x0, y0 float32) Image
 	Scale(xscale, yscale, dx, dy Matrix)
 	Rotate(angle, dx, dy Matrix)
 	Release()
@@ -62,11 +63,7 @@ func (img *imagecl) Import(m Matrix) {
 	k := sw[loadImageKernel]
 	k.SetArg(0, 8, unsafe.Pointer(&img.buf))
 	setArgMatrix(k, 1, in)
-	gSize := []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}
-	err := k.EnqueueKernel(hw, gSize, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}, nil)
 }
 
 // Apply 2D linear interpolation to and copy results to out matrix
@@ -77,16 +74,12 @@ func (img *imagecl) Export(xv, yv, out Matrix) {
 	setArgMatrix(k, 1, x)
 	setArgMatrix(k, 3, y)
 	setArgMatrix(k, 5, m)
-	gSize := []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}
-	err := k.EnqueueKernel(hw, gSize, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}, nil)
 }
 
 // Set the image center point for scaling and rotation
-func (img *imagecl) SetOrigin(x0, y0 float64) Image {
-	img.x0, img.y0 = float32(x0), float32(y0)
+func (img *imagecl) SetOrigin(x, y float32) Image {
+	img.x0, img.y0 = x, y
 	return img
 }
 
@@ -101,11 +94,7 @@ func (img *imagecl) Scale(xscale, yscale, dx, dy Matrix) {
 	setArgMatrix(k, 4, sy)
 	setArgMatrix(k, 6, xd)
 	setArgMatrix(k, 8, yd)
-	gSize := []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}
-	err := k.EnqueueKernel(hw, gSize, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	k.EnqueueKernel(hw, []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}, nil)
 }
 
 // Generate distortion vectors for rotation transformation
@@ -118,31 +107,40 @@ func (img *imagecl) Rotate(angle, dx, dy Matrix) {
 	setArgMatrix(k, 2, ang)
 	setArgMatrix(k, 4, xd)
 	setArgMatrix(k, 6, yd)
-	gSize := []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}
-	err := k.EnqueueKernel(hw, gSize, nil, false)
+	k.EnqueueKernel(hw, []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}, nil)
+}
+
+type Filter struct {
+	*scl.Software
+}
+
+// Create a new filter with given size
+func NewFilter(size int) Filter {
+	src := srcHead + filterHead
+	for i := 0; i < size; i++ {
+		src += fmt.Sprintf(filterLoop, i)
+	}
+	src += filterTail
+	opts := fmt.Sprintf("-D FILTER_SIZE=%d -D FILTER_CENTER=%d.5f -D FILTER_STRIDE=%d", size, size/2, pad(int32(size)))
+	sw, err := scl.Compile(hw, src, "filter", opts)
 	if err != nil {
 		panic(err)
 	}
+	return Filter{sw}
 }
 
 // Apply a convolution kernel to a distribution to generate a set of distorion vectors
-func (img *imagecl) Filter(kernel, xin, yin, xout, yout Matrix) {
+func (f *Filter) Apply(in Image, kernel, out Matrix) {
 	kern := kernel.(*opencl32)
-	checkEqualSize("blas:Filter", xin, yin, xout)
-	yout.Reshape(yin.Rows(), yin.Cols(), false)
-	x1, y1 := xin.(*opencl32), yin.(*opencl32)
-	x2, y2 := xout.(*opencl32), yout.(*opencl32)
-	k := sw[filterKernel]
-	setArgMatrix(k, 0, x1)
-	setArgMatrix(k, 2, y1)
-	setArgMatrix(k, 4, x2)
-	setArgMatrix(k, 6, y2)
-	setArgMatrix(k, 8, kern)
-	gSize := []uint64{uint64(img.width), uint64(x1.Cols() / img.width), uint64(x1.rows)}
-	err := k.EnqueueKernel(hw, gSize, nil, false)
-	if err != nil {
-		panic(err)
-	}
+	img := in.(*imagecl)
+	m := out.(*opencl32)
+	m.Reshape(img.nimage, img.width*img.height, false)
+	k := f.Software
+	k.SetArg(0, 8, unsafe.Pointer(&img.buf))
+	setArgMatrix(k, 1, kern)
+	setArgMatrix(k, 3, m)
+	globalSize := []uint64{uint64(img.width), uint64(img.height), uint64(img.nimage)}
+	k.EnqueueKernel(hw, globalSize, nil)
 }
 
 // Create a gaussian kernel with given size and standard deviation, xs and ys should be odd
@@ -150,11 +148,12 @@ func GaussianKernel(xs, ys int, sigma float64) Matrix {
 	xmid, ymid := float64(xs/2), float64(ys/2)
 	twoPiSigma := math.Sqrt(2*math.Pi) / sigma
 	twoSigmaSq := 1.0 / (2 * sigma * sigma)
-	data := make([]float64, xs*ys)
+	data := make([]float32, xs*ys)
 	for y := 0; y < ys; y++ {
 		for x := 0; x < xs; x++ {
 			xf, yf := float64(x), float64(y)
-			data[y*xs+x] = twoPiSigma * math.Exp(-twoSigmaSq*((xf-xmid)*(xf-xmid)+(yf-ymid)*(yf-ymid)))
+			val := twoPiSigma * math.Exp(-twoSigmaSq*((xf-xmid)*(xf-xmid)+(yf-ymid)*(yf-ymid)))
+			data[y*xs+x] = float32(val)
 		}
 	}
 	return New(xs, ys).Load(ColMajor, data...)

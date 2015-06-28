@@ -1,7 +1,7 @@
 package mnist
 
 import (
-	//"fmt"
+	"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/network"
 	"math"
@@ -14,7 +14,7 @@ const (
 	scale        = 0.15
 	rotate       = 15.0 * math.Pi / 180.0
 	elasticSigma = 8.0
-	elasticScale = 0.5
+	elasticScale = 0.25
 	kernelSize   = 21
 )
 
@@ -26,13 +26,20 @@ const (
 )
 
 type Loader struct {
+	filter blas.Filter
 	img    blas.Image
+	uimg   blas.Image
 	xscale blas.Matrix
 	yscale blas.Matrix
 	angle  blas.Matrix
 	kernel blas.Matrix
-	ux, uy blas.Matrix
-	dx, dy blas.Matrix
+	unif   blas.Matrix
+	delta  blas.Matrix
+	debug  bool
+}
+
+func (l *Loader) Debug(on bool) {
+	l.debug = on
 }
 
 func (l *Loader) init(batch int) {
@@ -42,14 +49,14 @@ func (l *Loader) init(batch int) {
 	l.yscale = blas.New(1, batch)
 	l.angle = blas.New(1, batch)
 	// convolution kernel and elastic distortion arrays
+	l.filter = blas.NewFilter(kernelSize)
 	l.kernel = blas.GaussianKernel(kernelSize, kernelSize, elasticSigma)
 	//l.kernel.SetFormat("%4.2f")
 	//fmt.Printf("convolve kernel:\n%s\n", l.kernel)
-	l.ux = blas.New(batch, size2)
-	l.uy = blas.New(batch, size2)
+	l.unif = blas.New(2*batch, size2)
+	l.uimg = blas.NewImage(size, size, 2*batch)
 	// distortion map in x and y dimensions
-	l.dx = blas.New(batch, size2)
-	l.dy = blas.New(batch, size2)
+	l.delta = blas.New(2*batch, size2)
 }
 
 // DistortTypes returns the supported types of distortions
@@ -63,37 +70,45 @@ func (l *Loader) DistortTypes() []network.Distortion {
 
 // Distort method is used to apply distortions to a batch of images.
 // mask of -1 indicates all distortions are to be applied.
-func (l *Loader) Distort(in, out blas.Matrix, mask int, severity float64) {
+func (l *Loader) Distort(in, out blas.Matrix, mask int, severity float32) {
 	//fmt.Println("distort: severity=", severity, "mask=", mask, "batch=", in.Rows())
+	batch := in.Rows()
 	if l.img == nil {
-		l.init(in.Rows())
+		l.init(batch)
 	}
 	l.img.Import(in)
-	if mask < 0 || mask&Elastic != 0 {
-		l.ux.Random(-1, 1)
-		l.uy.Random(-1, 1)
-		l.img.Filter(l.kernel, l.ux, l.uy, l.dx, l.dy)
-		l.dx.Scale(elasticScale * severity)
-		l.dy.Scale(elasticScale * severity)
-		//l.dx.SetFormat("%5.2f")
-		//l.dy.SetFormat("%5.2f")
-		//fmt.Printf("elastic:\n%s\n%s\n", l.dx, l.dy)
+	dx := l.delta.Row(0, batch)
+	dy := l.delta.Row(batch, 2*batch)
+	if (mask < 0 || mask&Elastic != 0) && elasticScale != 0 {
+		l.unif.Random(-1, 1)
+		l.uimg.Import(l.unif)
+		l.filter.Apply(l.uimg, l.kernel, l.delta)
+		l.delta.Scale(elasticScale * severity)
+		if l.debug {
+			dx.SetFormat("%5.2f")
+			dy.SetFormat("%5.2f")
+			cen := size2/2 + size/2
+			fmt.Printf("elastic %s %s\n", dx.Row(0, 1).Col(cen-2, cen+3), dy.Row(0, 1).Col(cen-2, cen+3))
+		}
 	} else {
-		l.dx.Set(0)
-		l.dy.Set(0)
+		l.delta.Set(0)
 	}
-	if mask < 0 || mask&Rotate != 0 {
+	if (mask < 0 || mask&Rotate != 0) && rotate != 0 {
 		l.angle.Random(-severity*rotate, severity*rotate)
-		//fmt.Printf("rotate %s\n", l.angle)
-		l.img.Rotate(l.angle, l.dx, l.dy)
+		if l.debug {
+			fmt.Printf("rotate  %s\n", l.angle.Col(0, 1))
+		}
+		l.img.Rotate(l.angle, dx, dy)
 	}
-	if mask < 0 || mask&Scale != 0 {
+	if (mask < 0 || mask&Scale != 0) && scale != 0 {
 		l.xscale.Random(-severity*scale, severity*scale)
 		l.yscale.Random(-severity*scale, severity*scale)
-		//fmt.Printf("scale %s %s\n", l.xscale, l.yscale)
-		l.img.Scale(l.xscale, l.yscale, l.dx, l.dy)
+		if l.debug {
+			fmt.Printf("scale   %s %s\n", l.xscale.Col(0, 1), l.yscale.Col(0, 1))
+		}
+		l.img.Scale(l.xscale, l.yscale, dx, dy)
 	}
-	l.img.Export(l.dx, l.dy, out)
+	l.img.Export(dx, dy, out)
 }
 
 func (l *Loader) Release() {
@@ -103,10 +118,9 @@ func (l *Loader) Release() {
 		l.yscale.Release()
 		l.angle.Release()
 		l.kernel.Release()
-		l.ux.Release()
-		l.uy.Release()
-		l.dx.Release()
-		l.dy.Release()
+		l.unif.Release()
+		l.uimg.Release()
+		l.delta.Release()
 	}
 	l.img = nil
 }

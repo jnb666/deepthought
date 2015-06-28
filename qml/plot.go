@@ -1,6 +1,7 @@
 package qml
 
 import (
+	"github.com/jnb666/deepthought/vec"
 	"gopkg.in/qml.v1"
 	"gopkg.in/qml.v1/gl/2.1"
 	"image/color"
@@ -145,8 +146,8 @@ func (ps *Plots) drawLegend(gl *GL.GL, p *Plot) {
 	var width, height float32
 	for _, plt := range p.Plotters {
 		w, h := plt.LegendSize(ps)
-		width = fmax(width, w)
-		height = fmax(height, h)
+		width = vec.Max(width, w)
+		height = vec.Max(height, h)
 	}
 	ypos := float32(1)
 	if p.Legend == BottomLeft || p.Legend == BottomRight {
@@ -217,18 +218,4 @@ func drawBox(gl *GL.GL, x0, y0, x1, y1 float32, fill bool) {
 	gl.Vertex2f(x1, y1)
 	gl.Vertex2f(x0, y1)
 	gl.End()
-}
-
-func fmin(a, b float32) float32 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func fmax(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
 }

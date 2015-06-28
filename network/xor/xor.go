@@ -54,7 +54,7 @@ func (Loader) Load(samples int) (s *network.Dataset, err error) {
 	if blas.Implementation() == blas.OpenCL32 {
 		s.OutputToClass = blas.NewUnaryCL("float y = x > 0.f;")
 	} else {
-		s.OutputToClass = blas.Unary64(func(x float64) float64 {
+		s.OutputToClass = blas.Unary32(func(x float32) float32 {
 			if x > 0 {
 				return 1
 			} else {
@@ -67,6 +67,8 @@ func (Loader) Load(samples int) (s *network.Dataset, err error) {
 
 func (Loader) DistortTypes() (t []network.Distortion) { return }
 
-func (Loader) Distort(in, out blas.Matrix, mask int, severity float64) {}
+func (Loader) Distort(in, out blas.Matrix, mask int, severity float32) {}
 
 func (Loader) Release() {}
+
+func (Loader) Debug(on bool) {}

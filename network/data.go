@@ -20,8 +20,9 @@ type Loader interface {
 	Config() *Config
 	CreateNetwork(cfg *Config, d *Dataset) *Network
 	DistortTypes() []Distortion
-	Distort(in, out blas.Matrix, mask int, severity float64)
+	Distort(in, out blas.Matrix, mask int, severity float32)
 	Release()
+	Debug(on bool)
 }
 
 // Register function is called on initialisation to make a new dataset available.
@@ -103,7 +104,7 @@ func LoadFile(filename string, samples int, out2class blas.UnaryFunction) (d *Da
 	d = new(Data)
 	d.NumSamples = rows
 	// read data
-	buf := make([]float64, rows*cols)
+	buf := make([]float32, rows*cols)
 	for row := 0; row < rows; row++ {
 		for col := 0; col < cols; col++ {
 			if _, err = fmt.Fscan(file, &buf[col*rows+row]); err != nil {

@@ -2,9 +2,7 @@ package network
 
 import (
 	"fmt"
-	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/vec"
-	"math"
 	"time"
 )
 
@@ -36,7 +34,7 @@ type StatsData struct {
 	Error      *vec.Vector
 	ClassError *vec.Vector
 	ErrorHist  *vec.Vector
-	HistMax    float64
+	HistMax    float32
 }
 
 // NewStats function returns a new stats struct.
@@ -92,7 +90,7 @@ func (d *StatsData) clear(reset bool) {
 
 // EndRun method updates per run statistics and returns the stats.
 func (s *Stats) EndRun(failed bool) string {
-	s.RunTime.Push(s.TotalTime.Seconds())
+	s.RunTime.Push(float32(s.TotalTime.Seconds()))
 	test := s.Test
 	if test.Error.Len() == 0 {
 		test = s.Train
@@ -141,9 +139,10 @@ func (s *Stats) History() string {
 
 // Update method calculates the error and updates the stats.
 func (s *Stats) Update(n *Network, d *Dataset) {
-	blas.Sync()
-	s.EpochTime = time.Since(s.StartEpoch)
-	s.TotalTime += s.EpochTime
+	defer func() {
+		s.EpochTime = time.Since(s.StartEpoch)
+		s.TotalTime += s.EpochTime
+	}()
 	dset := []*Data{d.Valid, d.Test, d.Train}
 	stats := []*StatsData{s.Valid, s.Test, s.Train}
 	samples := 0
@@ -156,15 +155,15 @@ func (s *Stats) Update(n *Network, d *Dataset) {
 		return
 	}
 	// rescale the histograms
-	var oldMax, newMax float64
+	var oldMax, newMax float32
 	for _, set := range stats {
-		oldMax = math.Max(oldMax, set.HistMax)
+		oldMax = vec.Max(oldMax, set.HistMax)
 		if max := scaleHist(set.ErrorHist, histAuto); max > newMax {
 			newMax = max
 		}
 	}
 	niceMax := vec.Nicenum(newMax, true)
-	if math.Abs(newMax-oldMax) < epsilon {
+	if vec.Abs(newMax-oldMax) < epsilon {
 		return
 	}
 	//fmt.Printf("rescale hist: %.4f => %f\n", oldMax, niceMax)
@@ -182,8 +181,8 @@ func (s *Stats) Update(n *Network, d *Dataset) {
 	s.Valid.ErrorHist.Unlock()
 }
 
-func scaleHist(hist *vec.Vector, scale float64) float64 {
-	var x, y, sum, total float64
+func scaleHist(hist *vec.Vector, scale float32) float32 {
+	var x, y, sum, total float32
 	for i := 0; i < hist.Len(); i++ {
 		_, y := hist.XY(i)
 		total += y

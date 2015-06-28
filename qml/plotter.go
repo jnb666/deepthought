@@ -26,10 +26,10 @@ type Plotter interface {
 
 type XYer interface {
 	Len() int
-	BinWidth() float64
-	XY(i int) (x, y float64)
-	XYErr(i int) (x, y, yerr float64)
-	DataRange() (xmin, ymin, xmax, ymax float64)
+	BinWidth() float32
+	XY(i int) (x, y float32)
+	XYErr(i int) (x, y, yerr float32)
+	DataRange() (xmin, ymin, xmax, ymax float32)
 	Lock()
 	Unlock()
 }
@@ -38,8 +38,8 @@ type Point struct {
 	X, Y float32
 }
 
-func NewPoint(x, y float64) Point {
-	return Point{float32(x), float32(y)}
+func NewPoint(x, y float32) Point {
+	return Point{x, y}
 }
 
 // base plotter type

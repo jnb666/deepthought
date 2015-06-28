@@ -7,12 +7,12 @@ import (
 	"sync"
 )
 
-// Vector holds a slice of float64 values and errors. It implements the qml.XYer interface
+// Vector holds a slice of float32 values and errors. It implements the qml.XYer interface
 type Vector struct {
-	data        []float64
-	errors      []float64
-	xmin, xstep float64
-	ymin, ymax  float64
+	data        []float32
+	errors      []float32
+	xmin, xstep float32
+	ymin, ymax  float32
 	defSize     int
 	sync.Mutex
 }
@@ -26,21 +26,21 @@ func New(defaultSize int) *Vector {
 
 func (v *Vector) Len() int { return len(v.data) }
 
-func (v *Vector) BinWidth() float64 { return v.xstep }
+func (v *Vector) BinWidth() float32 { return v.xstep }
 
-func (v *Vector) XY(i int) (x, y float64) {
-	return v.xmin + v.xstep*float64(i), v.data[i]
+func (v *Vector) XY(i int) (x, y float32) {
+	return v.xmin + v.xstep*float32(i), v.data[i]
 }
 
-func (v *Vector) XYErr(i int) (x, y, yerr float64) {
-	return v.xmin + v.xstep*float64(i), v.data[i], v.errors[i]
+func (v *Vector) XYErr(i int) (x, y, yerr float32) {
+	return v.xmin + v.xstep*float32(i), v.data[i], v.errors[i]
 }
 
-func (v *Vector) DataRange() (xmin, ymin, xmax, ymax float64) {
-	return v.xmin, v.ymin, v.xmin + float64(cap(v.data))*v.xstep, v.ymax
+func (v *Vector) DataRange() (xmin, ymin, xmax, ymax float32) {
+	return v.xmin, v.ymin, v.xmin + float32(cap(v.data))*v.xstep, v.ymax
 }
 
-func (v *Vector) SetWidth(w float64) *Vector {
+func (v *Vector) SetWidth(w float32) *Vector {
 	v.xstep = w
 	return v
 }
@@ -48,8 +48,8 @@ func (v *Vector) SetWidth(w float64) *Vector {
 // Clear method empies the elements fom the vector after each run
 func (v *Vector) Clear(reset bool) *Vector {
 	if reset {
-		v.data = make([]float64, 0, v.defSize)
-		v.errors = make([]float64, 0, v.defSize)
+		v.data = make([]float32, 0, v.defSize)
+		v.errors = make([]float32, 0, v.defSize)
 		v.ymin, v.ymax = 1e30, -1e30
 		v.xstep = 1
 	} else {
@@ -59,7 +59,7 @@ func (v *Vector) Clear(reset bool) *Vector {
 }
 
 // Set method sets values from slice
-func (v *Vector) Set(xmin, xstep float64, values []float64) {
+func (v *Vector) Set(xmin, xstep float32, values []float32) {
 	v.data = append(v.data[:0], values...)
 	v.xmin = xmin
 	v.xstep = xstep
@@ -74,7 +74,7 @@ func (v *Vector) Set(xmin, xstep float64, values []float64) {
 }
 
 // Push method appends a new value
-func (v *Vector) Push(val, err float64) {
+func (v *Vector) Push(val, err float32) {
 	v.Lock()
 	v.data = append(v.data, val)
 	v.errors = append(v.errors, err)
@@ -88,7 +88,7 @@ func (v *Vector) Push(val, err float64) {
 }
 
 // Last method returns the last entry from the vector
-func (v *Vector) Last() float64 {
+func (v *Vector) Last() float32 {
 	return v.data[len(v.data)-1]
 }
 
@@ -106,7 +106,8 @@ func (s *RunningStat) Clear() {
 	s.StdDev = 0
 }
 
-func (s *RunningStat) Push(x float64) {
+func (s *RunningStat) Push(x32 float32) {
+	x := float64(x32)
 	s.Count++
 	if s.Count == 1 {
 		s.oldM, s.Mean = x, x
@@ -127,17 +128,17 @@ func (s *RunningStat) String() string {
 
 // Buffer type is a fixed size circular buffer.
 type Buffer struct {
-	data []float64
+	data []float32
 	size int
 }
 
 // NewBuffer function creates a new buffer with allocated maximum size.
 func NewBuffer(size int) *Buffer {
-	return &Buffer{data: make([]float64, size)}
+	return &Buffer{data: make([]float32, size)}
 }
 
 // Push method appends an item to the buffer.
-func (b *Buffer) Push(v float64) {
+func (b *Buffer) Push(v float32) {
 	if b.size < len(b.data) {
 		b.data[b.size] = v
 		b.size++
@@ -153,8 +154,8 @@ func (b *Buffer) Len() int {
 }
 
 // Max method returns the maximum value.
-func (b *Buffer) Max() float64 {
-	max := -1.0e99
+func (b *Buffer) Max() float32 {
+	max := float32(-1.0e30)
 	for _, v := range b.data {
 		if v > max {
 			max = v
@@ -165,7 +166,8 @@ func (b *Buffer) Max() float64 {
 
 // nicenum returns a "nice" number approximately equal to r
 // Rounds the number if round = true. Takes the ceiling if round = false.
-func Nicenum(r float64, round bool) float64 {
+func Nicenum(r32 float32, round bool) float32 {
+	r := float64(r32)
 	exponent := math.Floor(math.Log10(r))
 	fraction := r / math.Pow(10, exponent)
 	var nice float64
@@ -190,5 +192,27 @@ func Nicenum(r float64, round bool) float64 {
 			nice = 10
 		}
 	}
-	return nice * math.Pow(10, exponent)
+	return float32(nice * math.Pow(10, exponent))
+}
+
+// Float32 utils
+func Abs(x float32) float32 {
+	if x >= 0 {
+		return x
+	}
+	return -x
+}
+
+func Min(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func Max(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }

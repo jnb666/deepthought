@@ -1,7 +1,7 @@
 package blas
 
 import (
-	"math"
+	"fmt"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -9,7 +9,6 @@ import (
 
 func init() {
 	//Init(Native32)
-	//Init(Native64)
 	Init(OpenCL32)
 }
 
@@ -17,7 +16,7 @@ func TestLoad(t *testing.T) {
 	m := New(2, 3).Load(RowMajor, 1, 2, 3)
 	m.SetFormat("%3.0f")
 	t.Logf("\n%s\n", m)
-	expect := []float64{1, 2, 3, 1, 2, 3}
+	expect := []float32{1, 2, 3, 1, 2, 3}
 	data := m.Data(RowMajor)
 	if !reflect.DeepEqual(data, expect) {
 		t.Error("expected", expect, "got", data)
@@ -25,45 +24,15 @@ func TestLoad(t *testing.T) {
 	m.Release()
 }
 
-func TestRandom(t *testing.T) {
-	m := New(5, 8)
-	m.SetFormat("%6.3f")
-	for i := 0; i < 5; i++ {
-		m.Random(-10, 10)
-		t.Logf("\n%s\n", m)
-	}
-	m.Release()
-}
-
-func TestImage(t *testing.T) {
-	size := 4
-	img := NewImage(size, size, 1)
-	data := New(1, size*size).Set(0.5)
-	data.SetFormat("%c")
-	t.Logf("data\n%s\n", data)
-	img.Import(data)
-	out := New(1, size*size)
-	row := make([]float64, size)
-	for i := range row {
-		row[i] = float64(i)
-	}
-	xa := New(size, size).Load(RowMajor, row...)
-	ya := New(size, size).Load(ColMajor, row...)
-	img.Export(xa, ya, out)
-	img2 := New(size, size).Load(RowMajor, out.Data(RowMajor)...)
-	img2.SetFormat("%c")
-	t.Logf("out\n%s\n", img2)
-}
-
 func TestCopy(t *testing.T) {
 	m := New(4, 2).Load(RowMajor, 1, 2, 3, 4, 5, 6, 7, 8)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
-	m2 := New(4, 3).Copy(m, nil)
+	m2 := New(4, 3).Set(0).Copy(m, nil)
 	m2.Reshape(4, 3, false)
 	m2.SetFormat("%3.0f")
 	t.Logf("m2\n%s\n", m2)
-	expect := []float64{1, 2, 0, 3, 4, 0, 5, 6, 0, 7, 8, 0}
+	expect := []float32{1, 2, 0, 3, 4, 0, 5, 6, 0, 7, 8, 0}
 	if !reflect.DeepEqual(m2.Data(RowMajor), expect) {
 		t.Error("expected", expect)
 	}
@@ -71,7 +40,7 @@ func TestCopy(t *testing.T) {
 	ix := New(2, 1).Load(ColMajor, 0, 3)
 	m2.Copy(m, ix)
 	t.Logf("m2\n%s\n", m2)
-	expect = []float64{1, 2, 7, 8}
+	expect = []float32{1, 2, 7, 8}
 	if !reflect.DeepEqual(m2.Data(RowMajor), expect) {
 		t.Error("expected", expect)
 	}
@@ -81,7 +50,7 @@ func TestCopy(t *testing.T) {
 }
 
 func TestTranspose(t *testing.T) {
-	expect := []float64{1, 2, 3, 4, 5, 6}
+	expect := []float32{1, 2, 3, 4, 5, 6}
 	m := New(2, 3).Load(RowMajor, expect...)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
@@ -151,7 +120,7 @@ func TestSlice(t *testing.T) {
 	t.Logf("\n%s\n", m)
 	m.Row(1, 2).Load(ColMajor, 2, 5, 0)
 	t.Logf("\n%s\n", m)
-	expect := []float64{1, 2, 3, 4, 5, 6, 1, 0, 3}
+	expect := []float32{1, 2, 3, 4, 5, 6, 1, 0, 3}
 	if !reflect.DeepEqual(m.Data(ColMajor), expect) {
 		t.Error("expected", expect)
 	}
@@ -160,7 +129,7 @@ func TestSlice(t *testing.T) {
 
 func checkMul(t *testing.T, m Matrix, title string, oTrans bool) {
 	t.Logf("%s\n%s\n", title, m)
-	expect := []float64{58, 64, 139, 154}
+	expect := []float32{58, 64, 139, 154}
 	order := RowMajor
 	if oTrans {
 		order = ColMajor
@@ -211,7 +180,7 @@ func TestMul(t *testing.T) {
 
 func checkBig(t *testing.T, m Matrix, title string) {
 	t.Logf("%s\n%s\n", title, m)
-	expect := []float64{
+	expect := []float32{
 		2453, 2408, 2687, 2708, 2232, 2565, 2537, 2553, 2954, 2805, 2864, 1523, 2778, 2013, 2629, 2654, 2409, 2636, 2539, 2998,
 		2772, 2542, 3006, 2682, 2403, 2819, 3008, 2802, 3143, 3150, 3240, 1876, 2857, 2445, 2798, 3099, 2785, 2960, 2824, 3374,
 		2590, 2138, 2576, 2294, 1980, 2344, 2404, 2368, 2742, 2649, 2530, 1558, 2738, 2393, 2180, 2363, 2348, 2726, 2596, 3046,
@@ -256,6 +225,14 @@ func checkBig(t *testing.T, m Matrix, title string) {
 	if m.Rows() != 40 || m.Cols() != 20 || !reflect.DeepEqual(m.Data(RowMajor), expect) {
 		t.Error("mul: expected", expect)
 	}
+}
+
+func randSlice(n int) []float32 {
+	res := make([]float32, n)
+	for i := range res {
+		res[i] = float32(rand.Intn(20))
+	}
+	return res
 }
 
 func TestBigMlt(t *testing.T) {
@@ -303,12 +280,12 @@ func TestApply(t *testing.T) {
 		fu = NewUnaryCL("float y = x * x;")
 		fb = NewBinaryCL("float z = x + y*y;")
 	} else {
-		fu = Unary64(func(x float64) float64 { return x * x })
-		fb = Binary64(func(x, y float64) float64 { return x + y*y })
+		fu = Unary32(func(x float32) float32 { return x * x })
+		fb = Binary32(func(x, y float32) float32 { return x + y*y })
 	}
 	fu.Apply(m, m)
 	t.Logf("m\n%s\n", m)
-	expect := []float64{1, 4, 9, 16, 25, 36, 49, 64, 81}
+	expect := []float32{1, 4, 9, 16, 25, 36, 49, 64, 81}
 	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
 		t.Error("expected", expect)
 	}
@@ -317,7 +294,7 @@ func TestApply(t *testing.T) {
 	t.Logf("m\n%s\n", m2)
 	fb.Apply(m, m2, m)
 	t.Logf("m\n%s\n", m)
-	expect = []float64{2, 8, 18, 17, 29, 45, 50, 68, 90}
+	expect = []float32{2, 8, 18, 17, 29, 45, 50, 68, 90}
 	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
 		t.Error("expected", expect)
 	}
@@ -334,6 +311,13 @@ func TestSum(t *testing.T) {
 	if sum != 36 {
 		t.Error("wrong sum!")
 	}
+	m.Reshape(2, 2, false)
+	t.Logf("m\n%s\n", m)
+	sum = m.Sum()
+	t.Log("sum = ", sum)
+	if sum != 8 {
+		t.Error("wrong sum!")
+	}
 	m2 := New(20, 20).Load(RowMajor, 1, 2, 3)
 	m2.SetFormat("%3.0f")
 	t.Logf("m2\n%s\n", m2)
@@ -342,13 +326,15 @@ func TestSum(t *testing.T) {
 	if sum != 799 {
 		t.Error("wrong sum!")
 	}
+	m.Reshape(5, 3, false)
 	m2.SumRows(m)
 	t.Logf("m2\n%s\n", m2)
-	expect := []float64{6, 7, 8, 9, 6}
+	expect := []float32{6, 7, 8, 9, 6}
 	if m2.Rows() != m.Rows() || m2.Cols() != 1 || !reflect.DeepEqual(m2.Data(ColMajor), expect) {
 		t.Error("wrong SumRows!")
 	}
 	m.Release()
+	m2.Release()
 }
 
 func TestMaxCol(t *testing.T) {
@@ -358,7 +344,7 @@ func TestMaxCol(t *testing.T) {
 	c := New(5, 1).MaxCol(m)
 	c.SetFormat("%3.0f")
 	t.Logf("\n%s\n", c)
-	expect := []float64{0, 1, 2, 0, 2}
+	expect := []float32{0, 1, 2, 0, 2}
 	if !reflect.DeepEqual(c.Data(ColMajor), expect) {
 		t.Error("expected", expect)
 	}
@@ -372,11 +358,9 @@ func TestNorm(t *testing.T) {
 	t.Logf("\n%s\n", m)
 	m.Norm(m)
 	t.Logf("\n%s\n", m)
-	expect := []float64{0.5, 0.25, 0.25, 1, 0, 0, 1, 0.5, -0.5}
-	for i, val := range m.Data(RowMajor) {
-		if math.Abs(val-expect[i]) > 1e-5 {
-			t.Error("expected", expect[i], "got", val)
-		}
+	expect := []float32{0.5, 0.25, 0.25, 1, 0, 0, 1, 0.5, -0.5}
+	if !reflect.DeepEqual(m.Data(RowMajor), expect) {
+		t.Error("expected", expect, "got", m.Data(RowMajor))
 	}
 	m.Release()
 }
@@ -385,24 +369,105 @@ func TestHistogram(t *testing.T) {
 	m := New(10, 1).Load(ColMajor, 5, 3, 1, 1, 1, 2, 2, 3, 4, 5)
 	m.SetFormat("%3.0f")
 	t.Logf("m\n%s\n", m)
-	h := New(5, 1).Histogram(m, 5, 0.5, 5.5)
+	h := New(5, 1).Set(0).Histogram(m, 5, 0.5, 5.5)
 	h.SetFormat("%3.0f")
 	t.Logf("hist\n%s\n", h)
-	expect := []float64{3, 2, 2, 1, 2}
+	expect := []float32{3, 2, 2, 1, 2}
 	if !reflect.DeepEqual(h.Data(ColMajor), expect) {
 		t.Error("expected", expect)
 	}
 }
 
-var m0 Matrix
-
-func randSlice(n int) []float64 {
-	res := make([]float64, n)
-	for i := range res {
-		res[i] = float64(rand.Intn(20))
+func TestRandom(t *testing.T) {
+	SeedRandom(42)
+	m := New(500, 500)
+	m.SetFormat("%6.3f")
+	for i := 0; i < 5; i++ {
+		m.Random(-10, 10)
+		t.Logf("\n%s\n", m.Row(400, 404).Col(400, 404))
 	}
-	return res
+	m.Release()
 }
+
+func TestImage(t *testing.T) {
+	size := 4
+	img := NewImage(size, size, 1)
+	data := New(1, size*size).Set(0.5)
+	data.SetFormat("%c")
+	t.Logf("data\n%s\n", data)
+	img.Import(data)
+	out := New(1, size*size)
+	row := make([]float32, size)
+	for i := range row {
+		row[i] = float32(i)
+	}
+	xa := New(size, size).Load(RowMajor, row...)
+	ya := New(size, size).Load(ColMajor, row...)
+	img.Export(xa, ya, out)
+	img2 := New(size, size).Load(RowMajor, out.Data(RowMajor)...)
+	img2.SetFormat("%c")
+	t.Logf("out\n%s\n", img2)
+	img.Release()
+	data.Release()
+	xa.Release()
+	ya.Release()
+}
+
+func printImg(title string, size int, m Matrix, t *testing.T) {
+	data := m.Data(RowMajor)
+	img := New(size, size).Load(RowMajor, data...)
+	img.SetFormat("%c")
+	t.Logf("%s\n%s\n", title, img)
+	img.Release()
+}
+
+func TestFilter(t *testing.T) {
+	SeedRandom(0)
+	batch := 1
+	size := 28
+	kernel := GaussianKernel(21, 21, 8.0)
+	kernel.SetFormat("%c")
+	t.Logf("kernel\n%s\n", kernel)
+	filter := NewFilter(21)
+	unif := New(batch, size*size).Random(-1, 1)
+	printImg("input", size, unif, t)
+	img := NewImage(size, size, batch)
+	img.Import(unif)
+	out := New(batch, size*size)
+	filter.Apply(img, kernel, out)
+	out.Scale(0.1)
+	printImg("output", size, out, t)
+	unif.Release()
+	out.Release()
+	kernel.Release()
+	img.Release()
+	filter.Release()
+}
+
+func BenchmarkFilter(b *testing.B) {
+	batch := 250
+	size := 28
+	SeedRandom(42)
+	kernel := GaussianKernel(21, 21, 8.0)
+	filter := NewFilter(21)
+	img := NewImage(size, size, batch)
+	unif := New(2*batch, size*size)
+	delta := New(2*batch, size*size)
+	for i := 0; i < b.N; i++ {
+		unif.Random(-1, 1)
+		img.Import(unif)
+		filter.Apply(img, kernel, delta)
+		delta.Scale(0.5)
+		Sync()
+	}
+	unif.Release()
+	delta.Release()
+	kernel.Release()
+	filter.Release()
+	img.Release()
+}
+
+var m0 Matrix
 
 func BenchmarkAdd(b *testing.B) {
 	rows, cols := 1024, 1024
@@ -413,6 +478,9 @@ func BenchmarkAdd(b *testing.B) {
 		m0.Add(m1, m2, 1)
 		Sync()
 	}
+	m0.Release()
+	m1.Release()
+	m2.Release()
 }
 
 func BenchmarkTrans(b *testing.B) {
@@ -423,6 +491,8 @@ func BenchmarkTrans(b *testing.B) {
 		m0.Transpose(m1)
 		Sync()
 	}
+	m0.Release()
+	m1.Release()
 }
 
 func BenchmarkMul(b *testing.B) {
@@ -434,9 +504,12 @@ func BenchmarkMul(b *testing.B) {
 		m0.Mul(m1, m2, false, false, false)
 		Sync()
 	}
+	m0.Release()
+	m1.Release()
+	m2.Release()
 }
 
-var total float64
+var total float32
 
 func BenchmarkSum(b *testing.B) {
 	rows, cols := 1024, 1024
@@ -444,4 +517,72 @@ func BenchmarkSum(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		total = m0.Sum()
 	}
+	m0.Release()
+}
+
+func rand32(n int) []float32 {
+	res := make([]float32, n)
+	for i := range res {
+		res[i] = rand.Float32() - 0.5
+	}
+	return res
+}
+
+func TestStress1(t *testing.T) {
+	rand.Seed(1)
+	rows, cols := 1000, 1000
+	m1 := New(rows, cols).Load(RowMajor, rand32(rows*cols)...)
+	m2 := New(rows, cols).Load(RowMajor, rand32(rows*cols)...)
+	m0 := New(rows, cols).Mul(m1, m2, false, false, false)
+	data := m0.Data(RowMajor)
+	for i := 0; i < 10; i++ {
+		m0.Mul(m1, m2, false, false, false)
+		data2 := m0.Data(RowMajor)
+		if !reflect.DeepEqual(data, data2) {
+			t.Error(i, "data is corrupt!")
+			for j := range data {
+				if data[j] != data2[j] {
+					fmt.Printf("%d: %g %g\n", j, data[j], data2[j])
+				}
+			}
+		}
+	}
+	m0.Release()
+	m1.Release()
+	m2.Release()
+}
+
+func TestStress2(t *testing.T) {
+	rand.Seed(1)
+	rows, cols := 1000, 1000
+	m0 := New(rows, cols)
+	m1 := New(rows, cols).Load(RowMajor, rand32(rows*cols)...)
+	m2 := New(rows, cols).Load(RowMajor, rand32(rows*cols)...)
+	m3 := New(rows, cols).Set(0)
+	var sum float32
+	for i := 0; i < 10; i++ {
+		m0.Mul(m1, m2, false, false, false)
+		m3.Add(m3, m0, 0.1)
+		if i%2 == 0 {
+			m1.Copy(m0.Scale(0.1), nil)
+		} else {
+			m2.Copy(m0.Scale(0.1), nil)
+		}
+		sum = m3.Sum()
+		t.Log(sum)
+	}
+	if fabs(sum+263.032) > 0.001 {
+		t.Error("data is corrupt!")
+	}
+	m0.Release()
+	m1.Release()
+	m2.Release()
+	m3.Release()
+}
+
+func fabs(x float32) float32 {
+	if x >= 0 {
+		return x
+	}
+	return -x
 }

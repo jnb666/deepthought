@@ -10,7 +10,7 @@ type Layer interface {
 	Dims() []int
 	Values() blas.Matrix
 	FeedForward(in blas.Matrix) blas.Matrix
-	BackProp(err blas.Matrix, momentum float64) blas.Matrix
+	BackProp(err blas.Matrix, momentum float32) blas.Matrix
 	Weights() blas.Matrix
 	Gradient() blas.Matrix
 	Cost(t blas.Matrix) blas.Matrix
@@ -95,7 +95,7 @@ func (l *layer) FeedForward(in blas.Matrix) blas.Matrix {
 	return l.output
 }
 
-func (l *layer) BackProp(err blas.Matrix, momentum float64) blas.Matrix {
+func (l *layer) BackProp(err blas.Matrix, momentum float32) blas.Matrix {
 	// calculate the gradient
 	if momentum == 0 {
 		l.gradient.Mul(err, l.input, true, false, false)
@@ -167,7 +167,7 @@ func (l *outLayer) FeedForward(in blas.Matrix) blas.Matrix {
 	return l.values
 }
 
-func (l *outLayer) BackProp(target blas.Matrix, momentum float64) blas.Matrix {
+func (l *outLayer) BackProp(target blas.Matrix, momentum float32) blas.Matrix {
 	l.delta.Add(l.values, target, -1)
 	if l.activ.Deriv != nil {
 		l.delta.MulElem(l.delta, l.deriv)
@@ -186,7 +186,7 @@ func (n *Network) AddQuadraticOutput(nodes int, a Activation) {
 	if blas.Implementation() == blas.OpenCL32 {
 		layer.cost = blas.NewBinaryCL("float z = (x-y)*(x-y);")
 	} else {
-		layer.cost = blas.Binary64(func(out, tgt float64) float64 { return (out - tgt) * (out - tgt) })
+		layer.cost = blas.Binary32(func(out, tgt float32) float32 { return (out - tgt) * (out - tgt) })
 	}
 	n.add(layer)
 }
@@ -197,11 +197,11 @@ func (n *Network) AddCrossEntropyOutput(nodes int) {
 	if blas.Implementation() == blas.OpenCL32 {
 		layer.cost = blas.NewBinaryCL("float z = -y * log(max(x, 1e-10f));")
 	} else {
-		layer.cost = blas.Binary64(func(out, tgt float64) float64 {
+		layer.cost = blas.Binary32(func(out, tgt float32) float32 {
 			if out < 1e-10 {
 				out = 1e-10
 			}
-			return -tgt * math.Log(out)
+			return -tgt * float32(math.Log(float64(out)))
 		})
 	}
 	n.add(layer)

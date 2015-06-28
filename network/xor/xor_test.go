@@ -9,7 +9,7 @@ func init() {
 	blas.Init(blas.Native32)
 }
 
-func TestIris(t *testing.T) {
+func TestXor(t *testing.T) {
 	s, err := Loader{}.Load(0)
 	if err != nil {
 		t.Fatal(err)

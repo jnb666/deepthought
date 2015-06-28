@@ -10,15 +10,15 @@ import (
 type Config struct {
 	MaxRuns     int     // number of runs: required
 	MaxEpoch    int     // maximum epoch: required
-	LearnRate   float64 // learning rate eta: required
-	WeightDecay float64 // weight decay epsilon
-	Momentum    float64 // momentum term used in weight updates
-	Threshold   float64 // target cost threshold
+	LearnRate   float32 // learning rate eta: required
+	WeightDecay float32 // weight decay epsilon
+	Momentum    float32 // momentum term used in weight updates
+	Threshold   float32 // target cost threshold
 	BatchSize   int     // minibatch size
 	StopAfter   int     // stop after n epochs with no improvement
 	LogEvery    int     // log stats every n epochs
 	Sampler     string  // sampler to use
-	Distortion  float64 // distortion severity
+	Distortion  float32 // distortion severity
 }
 
 func (c *Config) Print() {
@@ -55,7 +55,7 @@ func Load(name string, samples int) (cfg *Config, net *Network, d *Dataset, err 
 func StopCriteria(cfg *Config) func(*Stats) (done, failed bool) {
 	prevCost := vec.NewBuffer(cfg.StopAfter)
 	return func(s *Stats) (done, failed bool) {
-		var cost float64
+		var cost float32
 		if s.Valid.Error.Len() > 0 {
 			cost = s.Valid.Error.Last()
 		} else {

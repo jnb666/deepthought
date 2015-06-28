@@ -2,14 +2,13 @@ package blas
 
 import (
 	"fmt"
-	"math"
 	"strings"
 )
 
 // iterator to read from a circular buffer
-func getNext(vals []float64) func() float64 {
+func getNext(vals []float32) func() float32 {
 	j := 0
-	return func() float64 {
+	return func() float32 {
 		v := vals[j]
 		j++
 		if j == len(vals) {
@@ -20,7 +19,7 @@ func getNext(vals []float64) func() float64 {
 }
 
 // format a matrix for printing. %c is compact single char format
-func format(f string, rows, cols int, data []float64) string {
+func format(f string, rows, cols int, data []float32) string {
 	if rows == 0 {
 		return "[]"
 	}
@@ -54,12 +53,12 @@ func format(f string, rows, cols int, data []float64) string {
 	return strings.Join(str, "\n")
 }
 
-func toChar(v float64) byte {
+func toChar(v float32) byte {
 	if v > 1e-4 {
-		return 'A' + byte(math.Min(v, 1)*25)
+		return 'A' + byte(fmin(v, 1)*25)
 	}
 	if v < -1e-4 {
-		return 'a' + byte(math.Min(-v, 1)*25)
+		return 'a' + byte(fmin(-v, 1)*25)
 	}
 	return '.'
 }
@@ -71,4 +70,44 @@ func checkEqualSize(caller string, a, b, out Matrix) {
 		panic(caller + " - mismatch in no. of rows and columns in input matrices")
 	}
 	out.Reshape(rows, cols, false)
+}
+
+func fmin(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// functions for modular arithmetic - used by random seeds
+func addMod64(a, b, M uint64) (v uint64) {
+	v = a + b
+	if (v >= M) || (v < a) {
+		v -= M
+	}
+	return
+}
+
+func mulMod64(a, b, M uint64) (r uint64) {
+	for a != 0 {
+		if a&1 != 0 {
+			r = addMod64(r, b, M)
+		}
+		b = addMod64(b, b, M)
+		a = a >> 1
+	}
+	return
+}
+
+func powMod64(a, e, M uint64) (acc uint64) {
+	sqr := a
+	acc = 1
+	for e != 0 {
+		if e&1 != 0 {
+			acc = mulMod64(acc, sqr, M)
+		}
+		sqr = mulMod64(sqr, sqr, M)
+		e = e >> 1
+	}
+	return
 }

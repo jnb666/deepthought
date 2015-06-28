@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jnb666/deepthought/blas"
 	"github.com/jnb666/deepthought/network"
+	"github.com/jnb666/deepthought/vec"
 	"gopkg.in/qml.v1"
 	"gopkg.in/qml.v1/gl/2.1"
 	"image/color"
@@ -39,7 +40,7 @@ type results struct {
 	index  int
 	output int
 	target int
-	input  []float64
+	input  []float32
 }
 
 // convert points to screen coords
@@ -100,6 +101,7 @@ func (n *Network) Distort(on bool, mode int) {
 	n.distort = 0
 	if on {
 		loader := getLoader(n.ctrl.conf.Model)
+		//loader.Debug(true)
 		for i, t := range loader.DistortTypes() {
 			if mode == 0 || mode == i+1 {
 				n.distort += t.Mask
@@ -206,9 +208,9 @@ func (n *Network) Paint(paint *qml.Painter) {
 		for _, layer := range n.ctrl.network.Nodes {
 			nx, ny := dimxy(layer.Dims())
 			xsize += float32(nx + netPadX)
-			ysize = fmax(ysize, float32(ny+netPadY))
+			ysize = vec.Max(ysize, float32(ny+netPadY))
 		}
-		maxSize := fmax(xsize, ysize)
+		maxSize := vec.Max(xsize, ysize)
 		var xpos float32
 		for _, layer := range n.ctrl.network.Nodes {
 			nx, ny := dimxy(layer.Dims())
@@ -225,7 +227,7 @@ func (n *Network) Paint(paint *qml.Painter) {
 	} else {
 		// compact grid view with just input and output
 		nx, ny := dimxy(n.ctrl.network.Nodes[0].Dims())
-		maxSize := fmax(float32(nx+netPadX), float32(ny+netPadY))
+		maxSize := vec.Max(float32(nx+netPadX), float32(ny+netPadY))
 		for iy := 0; iy < grid; iy++ {
 			for ix := 0; ix < grid; ix++ {
 				i := iy*grid + ix
@@ -248,7 +250,7 @@ func (n *Network) Paint(paint *qml.Painter) {
 }
 
 // draw one layer where each cell is unit size centered at the origin
-func (n *Network) drawLayer(gl *GL.GL, nx, ny int, values []float64) {
+func (n *Network) drawLayer(gl *GL.GL, nx, ny int, values []float32) {
 	gl.PushAttrib(GL.CURRENT_BIT)
 	fx, fy := float32(nx), float32(ny)
 	ypos := -fy

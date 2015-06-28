@@ -23,6 +23,7 @@ func Compile(h *Hardware, source, name string, opts string) (*Software, error) {
 	srcptr := cl.Str(source + "\x00")
 	s.Program = cl.CreateProgramWithSource(h.Context, 1, &srcptr, nil, &err)
 	checkErr(err)
+	opts += " -cl-fp32-correctly-rounded-divide-sqrt -cl-opt-disable"
 	err = cl.BuildProgram(s.Program, 1, &h.DeviceId, cl.Str(opts+"\x00"), nil, nil)
 	if err != cl.SUCCESS {
 		var size uint64
@@ -152,24 +153,18 @@ func Run(h *Hardware, s *Software, workSizeX, workSizeY int, format string, args
 
 	// enqueue the kernel
 	//fmt.Println("enqueue kernel")
-	globalSize := []uint64{uint64(workSizeX), uint64(workSizeY)}
-	if err := s.EnqueueKernel(h, globalSize, nil, true); err != nil {
-		return err
-	}
+	s.EnqueueKernel(h, []uint64{uint64(workSizeX), uint64(workSizeY)}, nil)
 
 	// read the output
 	//fmt.Println("read output buffers")
 	for _, b := range outBuf {
-		err = b.Read(h)
-		if err != cl.SUCCESS {
-			return errors.New(cl.ErrToStr(err))
-		}
+		b.Read(h)
 	}
 	return nil
 }
 
 // Enqueue kernel method runs an NDRange kernel
-func (s *Software) EnqueueKernel(h *Hardware, globalSize, localSize []uint64, wait bool) error {
+func (s *Software) EnqueueKernel(h *Hardware, globalSize, localSize []uint64) {
 	var err cl.ErrorCode
 	if localSize != nil {
 		err = cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, uint32(len(globalSize)), nil, &globalSize[0], &localSize[0], 0, nil, nil)
@@ -177,13 +172,6 @@ func (s *Software) EnqueueKernel(h *Hardware, globalSize, localSize []uint64, wa
 		err = cl.EnqueueNDRangeKernel(h.Queue, s.Kernel, uint32(len(globalSize)), nil, &globalSize[0], nil, 0, nil, nil)
 	}
 	if err != cl.SUCCESS {
-		return errors.New(cl.ErrToStr(err))
+		panic(cl.ErrToStr(err))
 	}
-	if wait {
-		err = cl.Finish(h.Queue)
-		if err != cl.SUCCESS {
-			return errors.New(cl.ErrToStr(err))
-		}
-	}
-	return nil
 }
