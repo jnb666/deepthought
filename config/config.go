@@ -99,27 +99,36 @@ func Set(cfg interface{}, key, value string) error {
 	s := reflect.ValueOf(cfg).Elem()
 	fld := s.FieldByName(key)
 	if fld.IsValid() {
-		switch fld.Type().Kind() {
+		t := fld.Type().Kind()
+		switch t {
 		case reflect.String:
 			fld.SetString(value)
 		case reflect.Int, reflect.Int64:
 			val, err := strconv.ParseInt(value, 10, 0)
 			if err != nil {
-				return fmt.Errorf("FromMap: invalid value for %s: %s", key, err)
+				return fmt.Errorf("Config: invalid value for %s: %s", key, err)
 			}
 			fld.SetInt(val)
+		case reflect.Float32:
+			val, err := strconv.ParseFloat(value, 32)
+			if err != nil {
+				return fmt.Errorf("Config: invalid value for %s: %s", key, err)
+			}
+			fld.SetFloat(val)
 		case reflect.Float64:
 			val, err := strconv.ParseFloat(value, 64)
 			if err != nil {
-				return fmt.Errorf("FromMap: invalid value for %s: %s", key, err)
+				return fmt.Errorf("Config: invalid value for %s: %s", key, err)
 			}
 			fld.SetFloat(val)
 		case reflect.Bool:
 			val, err := strconv.ParseBool(value)
 			if err != nil {
-				return fmt.Errorf("FromMap: invalid value for %s: %s", key, err)
+				return fmt.Errorf("Config: invalid value for %s: %s", key, err)
 			}
 			fld.SetBool(val)
+		default:
+			return fmt.Errorf("Config: unsupported type %v", t)
 		}
 	}
 	return nil

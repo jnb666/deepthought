@@ -80,7 +80,7 @@ func newopencl32(rows, cols int) Matrix {
 	prows, pcols := pad(nrows), pad(ncols)
 	hostData := make([]float32, prows*pcols)
 	buffer := scl.NewBuffer(hw, cl.MEM_READ_WRITE, int(prows*pcols*wSize), hostData)
-	buffer.Write(hw)
+	buffer.Clear(hw)
 	return &opencl32{
 		dims:   dims{rows: nrows, cols: ncols, stride: pcols},
 		buf:    buffer,

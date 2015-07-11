@@ -33,8 +33,10 @@ type Loader struct {
 	yscale blas.Matrix
 	angle  blas.Matrix
 	kernel blas.Matrix
-	unif   blas.Matrix
-	delta  blas.Matrix
+	unifx  blas.Matrix
+	unify  blas.Matrix
+	dx     blas.Matrix
+	dy     blas.Matrix
 	debug  bool
 }
 
@@ -43,7 +45,7 @@ func (l *Loader) Debug(on bool) {
 }
 
 func (l *Loader) init(batch int) {
-	l.img = blas.NewImage(size, size, batch)
+	l.img = blas.NewImage(size, size, batch, 1)
 	// arrays for scaling and rotation
 	l.xscale = blas.New(1, batch)
 	l.yscale = blas.New(1, batch)
@@ -53,10 +55,12 @@ func (l *Loader) init(batch int) {
 	l.kernel = blas.GaussianKernel(kernelSize, kernelSize, elasticSigma)
 	//l.kernel.SetFormat("%4.2f")
 	//fmt.Printf("convolve kernel:\n%s\n", l.kernel)
-	l.unif = blas.New(2*batch, size2)
-	l.uimg = blas.NewImage(size, size, 2*batch)
+	l.unifx = blas.New(batch, size2)
+	l.unify = blas.New(batch, size2)
+	l.uimg = blas.NewImage(size, size, batch, 2)
 	// distortion map in x and y dimensions
-	l.delta = blas.New(2*batch, size2)
+	l.dx = blas.New(batch, size2)
+	l.dy = blas.New(batch, size2)
 }
 
 // DistortTypes returns the supported types of distortions
@@ -77,28 +81,29 @@ func (l *Loader) Distort(in, out blas.Matrix, mask int, severity float32) {
 		l.init(batch)
 	}
 	l.img.Import(in)
-	dx := l.delta.Row(0, batch)
-	dy := l.delta.Row(batch, 2*batch)
 	if (mask < 0 || mask&Elastic != 0) && elasticScale != 0 {
-		l.unif.Random(-1, 1)
-		l.uimg.Import(l.unif)
-		l.filter.Apply(l.uimg, l.kernel, l.delta)
-		l.delta.Scale(elasticScale * severity)
+		l.unifx.Random(-1, 1)
+		l.unify.Random(-1, 1)
+		l.uimg.Import(l.unifx, l.unify)
+		l.filter.Apply(l.uimg, l.kernel, l.dx, l.dy)
+		l.dx.Scale(elasticScale * severity)
+		l.dy.Scale(elasticScale * severity)
 		if l.debug {
-			dx.SetFormat("%5.2f")
-			dy.SetFormat("%5.2f")
+			l.dx.SetFormat("%5.2f")
+			l.dy.SetFormat("%5.2f")
 			cen := size2/2 + size/2
-			fmt.Printf("elastic %s %s\n", dx.Row(0, 1).Col(cen-2, cen+3), dy.Row(0, 1).Col(cen-2, cen+3))
+			fmt.Printf("elastic %s %s\n", l.dx.Row(0, 1).Col(cen-2, cen+3), l.dy.Row(0, 1).Col(cen-2, cen+3))
 		}
 	} else {
-		l.delta.Set(0)
+		l.dx.Set(0)
+		l.dy.Set(0)
 	}
 	if (mask < 0 || mask&Rotate != 0) && rotate != 0 {
 		l.angle.Random(-severity*rotate, severity*rotate)
 		if l.debug {
 			fmt.Printf("rotate  %s\n", l.angle.Col(0, 1))
 		}
-		l.img.Rotate(l.angle, dx, dy)
+		l.img.Rotate(l.angle, l.dx, l.dy)
 	}
 	if (mask < 0 || mask&Scale != 0) && scale != 0 {
 		l.xscale.Random(-severity*scale, severity*scale)
@@ -106,9 +111,9 @@ func (l *Loader) Distort(in, out blas.Matrix, mask int, severity float32) {
 		if l.debug {
 			fmt.Printf("scale   %s %s\n", l.xscale.Col(0, 1), l.yscale.Col(0, 1))
 		}
-		l.img.Scale(l.xscale, l.yscale, dx, dy)
+		l.img.Scale(l.xscale, l.yscale, l.dx, l.dy)
 	}
-	l.img.Export(dx, dy, out)
+	l.img.Export(l.dx, l.dy, out)
 }
 
 func (l *Loader) Release() {
@@ -118,9 +123,11 @@ func (l *Loader) Release() {
 		l.yscale.Release()
 		l.angle.Release()
 		l.kernel.Release()
-		l.unif.Release()
+		l.unifx.Release()
+		l.unify.Release()
 		l.uimg.Release()
-		l.delta.Release()
+		l.dx.Release()
+		l.dy.Release()
 	}
 	l.img = nil
 }

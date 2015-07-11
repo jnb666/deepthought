@@ -155,6 +155,7 @@ func (n *Network) Run(offset int) {
 	}
 	n.Call("update")
 	input.Release()
+	loader.Release()
 }
 
 func (n *Network) addResult(got int, res results, prepend bool) (int, bool) {

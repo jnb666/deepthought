@@ -21,6 +21,7 @@ const (
 	mulBTKernel
 	mulABTKernel
 	loadImageKernel
+	loadImageKernel2
 	approxKernel
 	scaleImageKernel
 	rotateKernel
@@ -29,8 +30,8 @@ const (
 )
 
 var name = []string{"copy", "copyIx", "set", "scale", "add", "cmp", "sum", "sumrows", "maxcol", "norm",
-	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT", "loadImage", "approx",
-	"scaleImage", "rotateImage", "random"}
+	"histogram", "mulelem", "transpose", "mul", "mulAT", "mulBT", "mulABT",
+	"loadImage", "loadImage2", "approx", "scaleImage", "rotateImage", "random"}
 
 var srcHead = `
 // Matrix header structure
@@ -84,22 +85,22 @@ __kernel void binary(const Dims ad, const __global float* a, const Dims bd, cons
 `
 
 var filterHead = `
-	__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+	__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
 
 	__kernel void filter(__read_only image2d_array_t img, const Dims kd, const __global float* kern,
-			const Dims od, __global float* out) {
+			const Dims xd, __global float* outx, const Dims yd, __global float* outy) {
 	ARG
-	float4 pos;
-	pos.z = get_global_id(2);
-	float conv = 0.f;
+	const float xx = col-FILTER_CENTER+.5f;
+	const float zz = get_global_id(2);
+	float4 conv = (float4)(0.f);
 	for (int y = 0; y < FILTER_SIZE; y++) {
-		pos.x = (float)col - FILTER_CENTER;
-		pos.y = (float)(row+y) - FILTER_CENTER;
+		float yy = row+y-FILTER_CENTER+.5f;
 `
-var filterLoop = "		conv += read_imagef(img, sampler, pos).x*kern[FILTER_STRIDE*y+%d]; pos.x += 1.f;\n"
+var filterLoop = "		conv += read_imagef(img,sampler,(float4)(xx+%d.f,yy,zz,0.f)) * kern[FILTER_STRIDE*y+%d];\n"
 
 var filterTail = `	}
-	out[P(od, get_global_id(2), row*get_global_size(0)+col)] = conv;
+	outx[P(xd, get_global_id(2), row*get_global_size(0)+col)] = conv.x;
+	outy[P(yd, get_global_id(2), row*get_global_size(0)+col)] = conv.y;	
 }`
 
 var source = []string{
@@ -268,11 +269,19 @@ var source = []string{
 	ARG
    	const int width = get_image_width(img);
 	const int nimg = get_global_id(2);
-	int4 ipos = (int4)(col, row, nimg, 0);
-	float4 val = (float4)(m[P(md, nimg, row*width+col)], 0, 0, 0);
-	write_imagef(img, ipos, val);
+	float4 val = (float4)(m[P(md,nimg,row*width+col)], 0, 0, 0);
+	write_imagef(img, (int4)(col,row,nimg,0), val);
 }`,
-	`__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;
+	`__kernel void loadImage2(__write_only image2d_array_t img, const Dims ad, const __global float* a,
+			const Dims bd, const __global float* b) {
+	ARG
+   	const int width = get_image_width(img);
+	const int nimg = get_global_id(2);
+	const int pos = row*width+col;
+	float4 val = (float4)(a[P(ad,nimg,pos)], b[P(bd,nimg,pos)], 0, 0);
+	write_imagef(img, (int4)(col,row,nimg,0), val);
+}`,
+	`__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_LINEAR;
 
 	__kernel void approx(__read_only image2d_array_t img, const Dims xd, const __global float* x,
 			const Dims yd, const __global float* y, const Dims md, __global float* m) {
